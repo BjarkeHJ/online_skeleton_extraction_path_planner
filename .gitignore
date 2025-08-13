@@ -38,3 +38,6 @@ Thumbs.db
 
 # ISAAC
 isaac_ros_assets/
+
+# Compressed files
+*.tar.gz
