@@ -83,5 +83,12 @@ To launch the Docker container, run the following commands:
 cd $ISAAC_ROS_WS/src/isaac_ros_common && \
 ./scripts/run_dev.sh
 ```
+Inside the docker conainter, you need to build the work space
+
+```
+cd ${ISAAC_ROS_WS}
+./scripts/build_docker_workspace.sh
+```
+
 </details>
 

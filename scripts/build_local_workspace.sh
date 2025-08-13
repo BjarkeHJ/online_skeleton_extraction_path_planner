@@ -10,10 +10,10 @@ SUBMODULES=(
 
 for submodule in "${SUBMODULES[@]}"; do
     echo "Initializing submodule: $submodule"
-    git submodule update --init "$submodule"
+    git submodule update --init --recursive "$submodule"
 done
 
-echo "Selected submodules initialized."
+echo "Selected submodules (and their nested submodules) initialized."
 
 # Update package lists to ensure we have the latest information
 echo "Updating package lists..."
