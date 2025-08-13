@@ -94,6 +94,7 @@ export ROS_DOMAIN_ID=21
 
 # Step 9: Fetch all necessary submodules
 echo "Fetching necessary submodules"
+cd ${ISAAC_ROS_WS}
 
 SUBMODULES=(
     "src/isaac_ros_common"
