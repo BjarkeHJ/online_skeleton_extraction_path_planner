@@ -15,7 +15,7 @@ This guide is based on a slightly modified version from [Isaac ROS NVBlox Setup]
 mkdir -p  ~/workspaces/
 ```
 
-2. **Clone the OSEP repository**:
+2. **Clone the OSEP Docker repository**:
 ```
 cd  ~/workspaces && \
 git clone https://github.com/BjarkeHJ/online_skeleton_extraction_path_planner.git isaac_ros-dev
@@ -24,17 +24,27 @@ cd ~/workspaces/isaac_ros-dev/ && \
 git submodule update --init --recursive
 ```
 
-3. **Set the workspace environment variable**:
+3. **Clone the OSEP Local repository**:
+```
+cd  ~/workspaces && \
+git clone https://github.com/BjarkeHJ/online_skeleton_extraction_path_planner.git OSEP
+
+cd ~/workspaces/OSEP/ && \
+git submodule update --init --recursive
+```
+
+4. **Set the workspace environment variable**:
 
 ```
 echo "export ISAAC_ROS_WS=${HOME}/workspaces/isaac_ros-dev/" >> ~/.bashrc
-echo "export ROS_DOMAIN_ID=<your_domain_id>" >> ~/.bashrc
+echo "export OSEP_ROS_WS=${HOME}/workspaces/OSEP/" >> ~/.bashrc
+echo "export ROS_DOMAIN_ID=21" >> ~/.bashrc
 source ~/.bashrc
 ```
 
 4. **Setup Simulation Environment**:
 ```
-echo 'alias pegasus_launch="cd ${ISAAC_ROS_WS} && ./src/osep_simulation_environment/launch_pegasus.sh"' >> ~/.bashrc
+echo 'alias pegasus_launch="cd ${OSEP_ROS_WS} && ./src/osep_simulation_environment/launch_pegasus.sh"' >> ~/.bashrc
 
 source ~/.bashrc
 ```
