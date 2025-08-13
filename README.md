@@ -57,7 +57,6 @@ Build the local workspace
 ```
 cd ${OSEP_ROS_WS}
 ./scripts/build_local_workspace.sh
-
 ```
 
 </details>
