@@ -30,8 +30,8 @@ git clone https://github.com/BjarkeHJ/online_skeleton_extraction_path_planner.gi
 4. **Set the workspace environment variable**:
 
 ```
-echo "export ISAAC_ROS_WS=${HOME}/workspaces/isaac_ros-dev/" >> ~/.bashrc
-echo "export OSEP_ROS_WS=${HOME}/workspaces/OSEP/" >> ~/.bashrc
+echo "export ISAAC_ROS_WS=${HOME}/workspaces/isaac_ros-dev" >> ~/.bashrc
+echo "export OSEP_ROS_WS=${HOME}/workspaces/OSEP" >> ~/.bashrc
 echo "export ROS_DOMAIN_ID=21" >> ~/.bashrc
 source ~/.bashrc
 ```
@@ -55,7 +55,9 @@ cd ${ISAAC_ROS_WS} && \
 
 Build the local workspace
 ```
-./${OSEP_ROS_WS}/scripts/build_local_ws.sh 
+cd ${OSEP_ROS_WS}
+./scripts/build_local_workspace.sh
+
 ```
 
 </details>

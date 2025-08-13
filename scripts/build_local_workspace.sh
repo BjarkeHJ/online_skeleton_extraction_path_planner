@@ -3,7 +3,7 @@
 echo "Fetching nessary submodules"
 
 SUBMODULES=(
-    "src/osep_simulation_env"
+    "src/osep_simulation_environment"
 )
 
 for submodule in "${SUBMODULES[@]}"; do
