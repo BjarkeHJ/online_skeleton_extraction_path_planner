@@ -1,0 +1,13 @@
+[submodule "src/isaac_ros_common"]
+	path = src/isaac_ros_common
+	url = https://github.com/NVIDIA-ISAAC-ROS/isaac_ros_common.git
+	branch = release-3.2
+
+[submodule "src/isaac_ros_nvblox"]
+	path = src/isaac_ros_nvblox
+	url = https://github.com/KasperMollerHansen/isaac_ros_nvblox.git
+	branch = release-3.2-custom
+
+[submodule "src/osep_simulation_environment"]
+	path = src/osep_simulation_environment
+	url = https://github.com/KasperMollerHansen/osep_simulation_environment.git
