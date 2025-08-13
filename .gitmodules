@@ -16,7 +16,11 @@
 	path = src/osep_simulation_environment
 	url = https://github.com/KasperMollerHansen/osep_simulation_environment.git
 
+[submodule "src/osep_nvblox_utils"]
+	path = src/osep_nvblox_utils
+	url = https://github.com/KasperMollerHansen/osep_nvblox_utils.git
+
+
 [submodule "src/osep_path_planner"]
 	path = src/osep_path_planner
 	url = https://github.com/BjarkeHJ/osep_path_planner.git
-

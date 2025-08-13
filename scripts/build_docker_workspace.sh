@@ -6,11 +6,12 @@ SUBMODULES=(
     "src/isaac_ros_common"
     "src/isaac_ros_nvblox"
     "src/px4_msgs"
+    "src/osep_nvblox_utils"
 )
 
 for submodule in "${SUBMODULES[@]}"; do
-    echo "Initializing submodule: $submodule"
-    git submodule update --init --recursive "$submodule"
+    echo "Initializing and updating submodule: $submodule"
+    git submodule update --init --recursive --remote "$submodule"
 done
 
 echo "Selected submodules (and their nested submodules) initialized."
@@ -23,6 +24,7 @@ sudo apt-get update
 PACKAGE_NAMES="
     isaac_ros_nvblox
     px4_msgs
+    osep_nvblox_utils
 "
 
 # Derive rosdep package paths from package names
