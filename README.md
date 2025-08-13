@@ -19,18 +19,12 @@ mkdir -p  ~/workspaces/
 ```
 cd  ~/workspaces && \
 git clone https://github.com/BjarkeHJ/online_skeleton_extraction_path_planner.git isaac_ros-dev
-
-cd ~/workspaces/isaac_ros-dev/ && \
-git submodule update --init --recursive
 ```
 
 3. **Clone the OSEP Local repository**:
 ```
 cd  ~/workspaces && \
 git clone https://github.com/BjarkeHJ/online_skeleton_extraction_path_planner.git OSEP
-
-cd ~/workspaces/OSEP/ && \
-git submodule update --init --recursive
 ```
 
 4. **Set the workspace environment variable**:
@@ -55,6 +49,17 @@ cd ${ISAAC_ROS_WS} && \
 ./scripts/docker_env_setup.sh
 ```
 </details>
+
+<details>
+<summary><b>Build the Workspaces</b></summary>
+
+Build the local workspace
+```
+./${OSEP_ROS_WS}/scripts/build_local_ws.sh 
+```
+
+</details>
+
 
 
 <details>

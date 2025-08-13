@@ -1,5 +1,18 @@
 #!/bin/bash
 
+echo "Fetching nessary submodules"
+
+SUBMODULES=(
+    "src/osep_simulation_env"
+)
+
+for submodule in "${SUBMODULES[@]}"; do
+    echo "Initializing submodule: $submodule"
+    git submodule update --init "$submodule"
+done
+
+echo "Selected submodules initialized."
+
 # Update package lists to ensure we have the latest information
 echo "Updating package lists..."
 sudo apt-get update
