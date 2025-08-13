@@ -34,10 +34,9 @@ source ~/.bashrc
 
 4. **Setup Simulation Environment**:
 ```
-echo 'alias pegasus_launch="cd ${ISAAC_ROS_WS} && source install/setup.bash && ./src/osep_simulation_environment/launch_pegasus.sh"' >> ~/.bashrc
+echo 'alias pegasus_launch="cd ${ISAAC_ROS_WS} && ./src/osep_simulation_environment/launch_pegasus.sh"' >> ~/.bashrc
 
 source ~/.bashrc
-
 ```
 
 5. **Setup Docker Environment**:
