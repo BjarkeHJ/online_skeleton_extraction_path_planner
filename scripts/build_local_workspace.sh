@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "Fetching nessary submodules"
+echo "Fetching necessary submodules"
 
 SUBMODULES=(
     "src/px4_msgs"

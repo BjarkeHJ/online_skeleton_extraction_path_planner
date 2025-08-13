@@ -91,4 +91,18 @@ fi
 # Step 8: Set up ROS
 export ROS_DOMAIN_ID=21
 
+
+# Step 9: Fetch all necessary submodules
+echo "Fetching necessary submodules"
+
+SUBMODULES=(
+    "src/isaac_ros_common"
+    "src/isaac_ros_nvblox"
+)
+
+for submodule in "${SUBMODULES[@]}"; do
+    echo "Initializing submodule: $submodule"
+    git submodule update --init "$submodule"
+done
+
 echo "Setup complete!"
