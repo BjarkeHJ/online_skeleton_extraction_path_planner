@@ -58,10 +58,9 @@ To launch the simulation environment, run the following commands:
 ```
 pegasus_launch
 ```
-</details>
 
 
-1. **Launching Docker**
+2. **Launching Docker**
 
 To launch the Docker container, run the following commands:
 
