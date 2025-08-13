@@ -16,4 +16,7 @@
 	path = src/osep_simulation_environment
 	url = https://github.com/KasperMollerHansen/osep_simulation_environment.git
 
+[submodule "src/osep_path_planner"]
+	path = src/osep_path_planner
+	url = https://github.com/BjarkeHJ/osep_path_planner.git
 
