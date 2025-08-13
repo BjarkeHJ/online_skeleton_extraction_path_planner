@@ -5,6 +5,7 @@ echo "Fetching necessary submodules"
 SUBMODULES=(
     "src/px4_msgs"
     "src/osep_simulation_environment"
+    "src/osep_path_planner"
 )
 
 for submodule in "${SUBMODULES[@]}"; do
@@ -21,6 +22,9 @@ sudo apt-get update
 # List of package names for colcon
 PACKAGE_NAMES="
     px4_msgs
+    data_publisher
+    path_planning
+    rosa_skeleton_extraction
 "
 
 # Derive rosdep package paths from colcon package names
