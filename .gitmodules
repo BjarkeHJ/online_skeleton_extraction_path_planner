@@ -8,6 +8,12 @@
 	url = https://github.com/KasperMollerHansen/isaac_ros_nvblox.git
 	branch = release-3.2-custom
 
+[submodule "src/px4_msgs"]
+	path = src/px4_msgs
+	url = https://github.com/PX4/px4_msgs.git
+
 [submodule "src/osep_simulation_environment"]
 	path = src/osep_simulation_environment
 	url = https://github.com/KasperMollerHansen/osep_simulation_environment.git
+
+

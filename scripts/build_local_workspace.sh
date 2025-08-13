@@ -3,6 +3,7 @@
 echo "Fetching nessary submodules"
 
 SUBMODULES=(
+    "src/px4_msgs"
     "src/osep_simulation_environment"
 )
 
