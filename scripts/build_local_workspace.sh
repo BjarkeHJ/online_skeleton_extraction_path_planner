@@ -39,6 +39,6 @@ cd ${OSEP_ROS_WS}
 
 # Build the workspace using colcon, ignoring the specified packages
 echo "Building the workspace with colcon..."
-colcon build --symlink-install --packages-select ${PACKAGE_NAMES}
+colcon build --symlink-install --base-paths ${INSTALL_PACKAGES}
 
 echo "Script completed successfully!"
