@@ -38,7 +38,7 @@ source ~/.bashrc
 
 4. **Setup Simulation Environment**:
 ```
-echo 'alias pegasus_launch="cd ${OSEP_ROS_WS} && ./src/osep_simulation_environment/launch_pegasus.sh"' >> ~/.bashrc
+echo -e '\npegasus_launch() {\n    cd "${OSEP_ROS_WS}" && ./src/osep_simulation_environment/launch_pegasus.sh\n}\n' >> ~/.bashrc
 
 source ~/.bashrc
 ```
