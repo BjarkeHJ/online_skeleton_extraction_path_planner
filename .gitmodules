@@ -20,7 +20,7 @@
 	path = src/osep_nvblox_utils
 	url = https://github.com/KasperMollerHansen/osep_nvblox_utils.git
 
-
-[submodule "src/osep_path_planner"]
-	path = src/osep_path_planner
-	url = https://github.com/BjarkeHJ/osep_path_planner.git
+[submodule "src/osep_core"]
+	path = src/osep_core
+	url = https://github.com/BjarkeHJ/osep_core.git
+	branch = main
