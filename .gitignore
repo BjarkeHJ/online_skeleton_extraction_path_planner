@@ -13,6 +13,10 @@ CMakePresets.json
 *.pyc
 *.pyo
 
+# Python cache directories
+__pycache__/
+**/__pycache__/
+
 # Logs
 *.log
 
@@ -41,3 +45,4 @@ isaac_ros_assets/
 
 # Compressed files
 *.tar.gz
+

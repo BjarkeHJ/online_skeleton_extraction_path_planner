@@ -22,6 +22,7 @@ sudo apt-get update
 # List of package names for colcon
 PACKAGE_NAMES="
     px4_msgs
+    osep_simulation_environment
     osep_core
 "
 
