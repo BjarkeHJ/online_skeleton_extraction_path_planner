@@ -7,9 +7,10 @@ SAFETY_DISTANCE = 10.0
 
 TOPIC_NAMES = {
     "VEL_CMD": '/osep/vel_cmd',
-    "PATH": '/osep/smoothed_path',
+    "PATH": '/osep/path',
     "COSTMAP": '/osep/local_costmap/costmap',
     "VIEWPOINTS": '/osep/viewpoints',
+    "VIEWPOINTS_ADJUSTED": '/osep/viewpoints_adjusted',
     "GROUND_TRUTH": '/osep/ground_truth'
 }
 
@@ -65,7 +66,6 @@ def generate_launch_description():
                 {"path_topic": TOPIC_NAMES["PATH"]},
                 {"ground_truth_topic": TOPIC_NAMES["GROUND_TRUTH"]},
                 {"viewpoints_adjusted_topic": TOPIC_NAMES["VIEWPOINTS_ADJUSTED"]},
-                {"path_planner_prefix": "/planner"},
                 {"ground_truth_update_interval": 8000},
                 {"safety_distance": SAFETY_DISTANCE},
             ]
