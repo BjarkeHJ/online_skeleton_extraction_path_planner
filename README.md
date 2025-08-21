@@ -15,30 +15,23 @@ This guide is based on a slightly modified version from [Isaac ROS NVBlox Setup]
 mkdir -p  ~/workspaces/
 ```
 
-2. **Clone the OSEP Docker repository**:
+2. **Clone the OSEP repository**:
 ```
 cd  ~/workspaces && \
 git clone https://github.com/BjarkeHJ/online_skeleton_extraction_path_planner.git isaac_ros-dev
 ```
 
-3. **Clone the OSEP Local repository**:
-```
-cd  ~/workspaces && \
-git clone https://github.com/BjarkeHJ/online_skeleton_extraction_path_planner.git OSEP
-```
-
-4. **Set the workspace environment variable**:
+3. **Set the workspace environment variable**:
 
 ```
 echo "export ISAAC_ROS_WS=${HOME}/workspaces/isaac_ros-dev" >> ~/.bashrc
-echo "export OSEP_ROS_WS=${HOME}/workspaces/OSEP" >> ~/.bashrc
 echo "export ROS_DOMAIN_ID=21" >> ~/.bashrc
 source ~/.bashrc
 ```
 
 4. **Setup Simulation Environment**:
 ```
-echo -e '\npegasus_launch() {\n    cd "${OSEP_ROS_WS}" && ./src/osep_simulation_environment/launch_pegasus.sh\n}\n' >> ~/.bashrc
+echo -e '\npegasus_launch() {\n    cd "${ISAAC_ROS_WS}" && ./src/osep_simulation_environment/launch_pegasus.sh\n}\n' >> ~/.bashrc
 
 source ~/.bashrc
 ```
@@ -50,16 +43,6 @@ cd ${ISAAC_ROS_WS} && \
 ```
 </details>
 
-<details>
-<summary><b>Build the Workspaces</b></summary>
-
-Build the local workspace
-```
-cd ${OSEP_ROS_WS}
-./scripts/build_local_workspace.sh
-```
-
-</details>
 
 
 
@@ -89,6 +72,18 @@ Inside the docker conainter, you need to build the work space
 cd ${ISAAC_ROS_WS}
 ./scripts/build_docker_workspace.sh
 ```
+
+3. **Running OSEP**
+
+Inside the docker container run:
+```
+source install/setup.bash
+ros2 launch osep osep.launch.py
+```
+
+In another docker terminal;
+
+
 
 </details>
 
