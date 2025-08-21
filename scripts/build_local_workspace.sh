@@ -24,6 +24,7 @@ PACKAGE_NAMES="
     px4_msgs
     osep_simulation_environment
     osep_core
+    osep
 "
 
 # Derive rosdep package paths from colcon package names
