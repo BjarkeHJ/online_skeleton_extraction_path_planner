@@ -6,8 +6,8 @@ SUBMODULES=(
     "src/isaac_ros_nvblox"
     "src/px4_msgs"
     "src/osep_nvblox_utils"
-    # "src/osep_core"
-    # "src/osep_simulation_environment"
+    "src/osep_core"
+    "src/osep_simulation_environment"
 )
 
 for submodule in "${SUBMODULES[@]}"; do
@@ -26,6 +26,9 @@ PACKAGE_NAMES="
     isaac_ros_nvblox
     px4_msgs
     osep_nvblox_utils
+    osep_core
+    osep_simulation_environment
+    osep
 "
 
 # Derive rosdep package paths from package names

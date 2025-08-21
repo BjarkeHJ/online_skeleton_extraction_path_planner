@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>osep</name>
+  <version>0.0.1</version>
+  <description>Launch files for OSEP system</description>
+  <maintainer email="kasperhansen1998@hotmail.com">Kasper Hansen</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+
+  <exec_depend>osep_simulation_environment</exec_depend>
+  <exec_depend>osep_2d_map</exec_depend>
+  <exec_depend>osep_skeleton_decomp</exec_depend>
+  <exec_depend>osep_planning</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
