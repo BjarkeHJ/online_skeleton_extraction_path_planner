@@ -3,13 +3,16 @@
 echo "Fetching necessary submodules"
 
 SUBMODULES=(
+    "src/isaac_ros_nvblox"
     "src/px4_msgs"
     "src/osep_nvblox_utils"
+    # "src/osep_core"
+    # "src/osep_simulation_environment"
 )
 
 for submodule in "${SUBMODULES[@]}"; do
-    echo "Initializing and updating submodule (fetching remote): $submodule"
-    git submodule update --init --recursive --remote "$submodule"
+    echo "Initializing and updating submodule: $submodule"
+    git submodule update --init --recursive "$submodule"
 done
 
 echo "Selected submodules (and their nested submodules) initialized."

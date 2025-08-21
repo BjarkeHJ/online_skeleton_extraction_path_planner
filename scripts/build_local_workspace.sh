@@ -9,8 +9,8 @@ SUBMODULES=(
 )
 
 for submodule in "${SUBMODULES[@]}"; do
-    echo "Initializing and updating submodule (fetching remote): $submodule"
-    git submodule update --init --recursive --remote "$submodule"
+    echo "Initializing and updating submodule: $submodule"
+    git submodule update --init --recursive "$submodule"
 done
 
 echo "Selected submodules (and their nested submodules) initialized."
