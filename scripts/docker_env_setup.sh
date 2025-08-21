@@ -99,6 +99,10 @@ cd ${ISAAC_ROS_WS}
 SUBMODULES=(
     "src/isaac_ros_common"
     "src/isaac_ros_nvblox"
+    "src/px4_msgs"
+    "src/osep_nvblox_utils"
+    "src/osep_core"
+    "src/osep_simulation_environment"
 )
 
 for submodule in "${SUBMODULES[@]}"; do
