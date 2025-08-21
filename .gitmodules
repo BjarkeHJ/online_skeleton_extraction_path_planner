@@ -10,7 +10,7 @@
 
 [submodule "src/px4_msgs"]
 	path = src/px4_msgs
-	url = https://github.com/PX4/px4_msgs.git
+	url = https://github.com/KasperMollerHansen/px4_msgs.git
 
 [submodule "src/osep_simulation_environment"]
 	path = src/osep_simulation_environment
