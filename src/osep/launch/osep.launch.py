@@ -7,7 +7,9 @@ SAFETY_DISTANCE = 10.0
 
 TOPIC_NAMES = {
     "VEL_CMD": '/osep/vel_cmd',
-    "PATH": '/planner/smoothed_path'
+    "PATH": '/planner/smoothed_path',
+    "COSTMAP": '/local_costmap/costmap',
+    "VIEWPOINTS": '/osep/viewpoints'
 }
 
 def generate_launch_description():
@@ -27,7 +29,7 @@ def generate_launch_description():
             parameters=[{
                 'path_topic': TOPIC_NAMES["PATH"],
                 'osep_vel_cmd': TOPIC_NAMES["VEL_CMD"],
-                'interpolation_distance': 2.0,
+                'interpolation_distance': 3.0,
                 'max_speed': 15.0,
                 'inspection_speed': 2.0,
                 'max_yaw_to_velocity_angle_deg': 120.0,
@@ -56,8 +58,8 @@ def generate_launch_description():
             parameters=[
                 {"frame_id": FRAME_ID},
                 {"interpolation_distance": 2.0},
-                {"costmap_topic": "/local_costmap/costmap"},
-                {"waypoints_topic": "/osep/viewpoints"},
+                {"costmap_topic": TOPIC_NAMES["COSTMAP"]},
+                {"waypoints_topic": TOPIC_NAMES["VIEWPOINTS"]},
                 {"path_planner_prefix": "/planner"},
                 {"ground_truth_update_interval": 8000},
                 {"safety_distance": SAFETY_DISTANCE},
