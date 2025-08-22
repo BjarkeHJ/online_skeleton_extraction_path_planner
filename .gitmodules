@@ -11,6 +11,7 @@
 [submodule "src/px4_msgs"]
 	path = src/px4_msgs
 	url = https://github.com/KasperMollerHansen/px4_msgs.git
+	branch = release-1.0
 
 [submodule "src/osep_simulation_environment"]
 	path = src/osep_simulation_environment
@@ -24,4 +25,3 @@
 [submodule "src/osep_core"]
 	path = src/osep_core
 	url = https://github.com/BjarkeHJ/osep_core.git
-	branch = main
