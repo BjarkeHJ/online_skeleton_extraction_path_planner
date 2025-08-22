@@ -16,7 +16,7 @@
 [submodule "src/osep_simulation_environment"]
 	path = src/osep_simulation_environment
 	url = https://github.com/KasperMollerHansen/osep_simulation_environment.git
-	branch = release-1.0
+	branch = release-1.1
 
 [submodule "src/osep_core"]
 	path = src/osep_core

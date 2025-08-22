@@ -35,7 +35,7 @@ def add_rviz(args: lu.ArgumentContainer) -> list[Action]:
         # Multi-rs dynamics & people displays overlay depth & color, taking from all RSs
         rviz_config_name = camera_str + "_example.rviz"
 
-        rviz_config_path = lu.get_path('osep_nvblox_boot',
+        rviz_config_path = lu.get_path('osep',
                                        'config/visualization/' + rviz_config_name)
 
     actions = []
