@@ -8,9 +8,35 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
-  <exec_depend>launch</exec_depend>
-  <exec_depend>launch_ros</exec_depend>
+    <build_depend>isaac_ros_common</build_depend>
 
+  <!-- Utils -->
+  <exec_depend>isaac_ros_launch_utils</exec_depend>
+  <exec_depend>nvblox_ros_python_utils</exec_depend>
+
+  <!-- Nvblox -->
+  <exec_depend>nvblox_ros</exec_depend>
+
+  <!-- Visual SLAM -->
+  <exec_depend>isaac_ros_visual_slam</exec_depend>
+
+  <!-- Segmentation -->
+  <depend>isaac_ros_peoplesemseg_models_install</depend>
+  <exec_depend>nvblox_image_padding</exec_depend>
+  <exec_depend>isaac_ros_dnn_image_encoder</exec_depend>
+  <exec_depend>isaac_ros_triton</exec_depend>
+  <exec_depend>isaac_ros_unet</exec_depend>
+  <exec_depend>semantic_label_conversion</exec_depend>
+
+  <!-- Detection -->
+  <depend>isaac_ros_peoplenet_models_install</depend>
+  <exec_depend>isaac_ros_detectnet</exec_depend>
+
+  <test_depend>ament_cmake_copyright</test_depend>
+  <test_depend>ament_cmake_lint_cmake</test_depend>
+  <test_depend>isaac_ros_test_cmake</test_depend>
+
+  <!-- OSEP -->
   <exec_depend>osep_simulation_environment</exec_depend>
   <exec_depend>osep_2d_map</exec_depend>
   <exec_depend>osep_skeleton_decomp</exec_depend>
