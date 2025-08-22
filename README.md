@@ -84,10 +84,7 @@ ros2 launch osep osep.launch.py
 In another docker terminal:
 ```
 source install/setup.bash
-ros2 launch osep_nvblox_utils osep_2d
+ros2 launch osep_nvblox_utils osep_2d.launch.py
 ```
-
-
-
 </details>
 
