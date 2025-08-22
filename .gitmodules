@@ -6,7 +6,7 @@
 [submodule "src/isaac_ros_nvblox"]
 	path = src/isaac_ros_nvblox
 	url = https://github.com/KasperMollerHansen/isaac_ros_nvblox.git
-	branch = release-3.2-custom
+	branch = release-c-3.2.0
 
 [submodule "src/px4_msgs"]
 	path = src/px4_msgs
