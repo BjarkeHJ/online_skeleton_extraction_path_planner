@@ -6,7 +6,7 @@
 [submodule "src/isaac_ros_nvblox"]
 	path = src/isaac_ros_nvblox
 	url = https://github.com/KasperMollerHansen/isaac_ros_nvblox.git
-	branch = release-3.2-custom
+	branch = release-c-3.2.0
 
 [submodule "src/px4_msgs"]
 	path = src/px4_msgs
@@ -15,6 +15,7 @@
 [submodule "src/osep_simulation_environment"]
 	path = src/osep_simulation_environment
 	url = https://github.com/KasperMollerHansen/osep_simulation_environment.git
+	branch = release-1.0
 
 [submodule "src/osep_nvblox_utils"]
 	path = src/osep_nvblox_utils
