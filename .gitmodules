@@ -18,10 +18,6 @@
 	url = https://github.com/KasperMollerHansen/osep_simulation_environment.git
 	branch = release-1.0
 
-[submodule "src/osep_nvblox_utils"]
-	path = src/osep_nvblox_utils
-	url = https://github.com/KasperMollerHansen/osep_nvblox_utils.git
-
 [submodule "src/osep_core"]
 	path = src/osep_core
 	url = https://github.com/BjarkeHJ/osep_core.git
