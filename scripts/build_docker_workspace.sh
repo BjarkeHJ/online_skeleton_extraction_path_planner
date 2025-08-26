@@ -8,7 +8,6 @@ sudo apt-get update
 PACKAGE_NAMES="
     isaac_ros_nvblox
     px4_msgs
-    osep_nvblox_utils
     osep_core
     osep_simulation_environment
     osep
