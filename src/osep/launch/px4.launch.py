@@ -36,7 +36,7 @@ def generate_launch_description():
                 'interpolation_distance': INTERPOLATION_DISTANCE,
                 'max_speed': 15.0,
                 'inspection_speed': INSPECTION_SPEED,
-                'max_yaw_to_velocity_angle_deg': 100.0,
+                'max_yaw_to_velocity_angle_deg': 120.0,
                 'frequency': 50,
                 'sharp_turn_thresh_deg': 30.0,
             }]
