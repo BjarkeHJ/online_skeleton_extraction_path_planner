@@ -6,8 +6,9 @@
 #include <pcl/octree/octree_pointcloud_occupancy.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <vector>
+#include <queue>
+#include <set>
 #include <Eigen/Core>
-
 
 class StaticPointcloudPostprocessNode : public rclcpp::Node
 {
@@ -43,7 +44,6 @@ private:
     size_t last_point_count_ = 0;
     sensor_msgs::msg::PointCloud2 last_msg_;
 
-
     // Filtering function: remove points not in a group of at least min_group_size per voxel
     std::vector<pcl::PointXYZ, Eigen::aligned_allocator<pcl::PointXYZ>>
     filter_sparse_groups(const sensor_msgs::msg::PointCloud2 &msg, double voxel_size, int min_group_size)
@@ -68,6 +68,76 @@ private:
             }
         }
         return filtered_points;
+    }
+
+    // Only keep voxels on the true outer shell (not internal cavities)
+    std::vector<pcl::PointXYZ, Eigen::aligned_allocator<pcl::PointXYZ>>
+    keep_outer_surface_voxels(const std::vector<pcl::PointXYZ, Eigen::aligned_allocator<pcl::PointXYZ>>& voxelCenters, double voxel_size)
+    {
+        // Build set of occupied voxel indices
+        std::set<std::tuple<int, int, int>> occupied_voxels;
+        int min_x = INT_MAX, max_x = INT_MIN;
+        int min_y = INT_MAX, max_y = INT_MIN;
+        int min_z = INT_MAX, max_z = INT_MIN;
+        for (const auto& c : voxelCenters) {
+            int ix = static_cast<int>(std::round(c.x / voxel_size));
+            int iy = static_cast<int>(std::round(c.y / voxel_size));
+            int iz = static_cast<int>(std::round(c.z / voxel_size));
+            occupied_voxels.insert({ix, iy, iz});
+            min_x = std::min(min_x, ix); max_x = std::max(max_x, ix);
+            min_y = std::min(min_y, iy); max_y = std::max(max_y, iy);
+            min_z = std::min(min_z, iz); max_z = std::max(max_z, iz);
+        }
+
+        // Flood fill to find outside air
+        std::set<std::tuple<int, int, int>> outside_air;
+        std::queue<std::tuple<int, int, int>> q;
+        for (int ix = min_x; ix <= max_x; ++ix)
+        for (int iy = min_y; iy <= max_y; ++iy)
+        for (int iz = min_z; iz <= max_z; ++iz) {
+            bool on_boundary = (ix == min_x || ix == max_x ||
+                                iy == min_y || iy == max_y ||
+                                iz == min_z || iz == max_z);
+            auto idx = std::make_tuple(ix, iy, iz);
+            if (on_boundary && occupied_voxels.count(idx) == 0) {
+                q.push(idx);
+                outside_air.insert(idx);
+            }
+        }
+        const int dx[6] = {1, -1, 0, 0, 0, 0};
+        const int dy[6] = {0, 0, 1, -1, 0, 0};
+        const int dz[6] = {0, 0, 0, 0, 1, -1};
+        while (!q.empty()) {
+            auto idx = q.front(); q.pop();
+            int ix = std::get<0>(idx), iy = std::get<1>(idx), iz = std::get<2>(idx);
+            for (int n = 0; n < 6; ++n) {
+                auto nidx = std::make_tuple(ix + dx[n], iy + dy[n], iz + dz[n]);
+                if (ix + dx[n] < min_x || ix + dx[n] > max_x ||
+                    iy + dy[n] < min_y || iy + dy[n] > max_y ||
+                    iz + dz[n] < min_z || iz + dz[n] > max_z)
+                    continue;
+                if (occupied_voxels.count(nidx) == 0 && outside_air.count(nidx) == 0) {
+                    q.push(nidx);
+                    outside_air.insert(nidx);
+                }
+            }
+        }
+
+        // Keep only voxels that have a neighbor in outside_air
+        std::vector<pcl::PointXYZ, Eigen::aligned_allocator<pcl::PointXYZ>> outer_surface_voxels;
+        for (const auto& c : voxelCenters) {
+            int ix = static_cast<int>(std::round(c.x / voxel_size));
+            int iy = static_cast<int>(std::round(c.y / voxel_size));
+            int iz = static_cast<int>(std::round(c.z / voxel_size));
+            for (int n = 0; n < 6; ++n) {
+                auto nidx = std::make_tuple(ix + dx[n], iy + dy[n], iz + dz[n]);
+                if (outside_air.count(nidx)) {
+                    outer_surface_voxels.push_back(c);
+                    break;
+                }
+            }
+        }
+        return outer_surface_voxels;
     }
 
     // Upsampling function
@@ -151,8 +221,12 @@ private:
 
         // Upsample using the function
         auto upsampled_points = upsample_voxels(voxelCenters, voxel_size_, upsample_N_);
+        // Only keep the outer surface points
+        auto outer_surface_upsampled = keep_outer_surface_voxels(upsampled_points, voxel_size_/upsample_N_);// Work from here!!
+
         double neighbor_radius = voxel_size_ / upsample_N_;
-        auto smoothed_points = smooth_points(upsampled_points, neighbor_radius);
+        auto smoothed_points = smooth_points(outer_surface_upsampled, neighbor_radius);
+
 
         pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_upsampled(new pcl::PointCloud<pcl::PointXYZ>);
         cloud_upsampled->points = smoothed_points;
