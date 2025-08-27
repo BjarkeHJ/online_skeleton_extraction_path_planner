@@ -424,7 +424,7 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /osep/tsdf_pointcloud
+        Value: /osep/static_tsdf_pointcloud
       Use Fixed Frame: true
       Use rainbow: true
       Value: true
@@ -474,16 +474,16 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 323.57073974609375
+      Distance: 381.9720458984375
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -0.9398532509803772
-        Y: -131.14439392089844
-        Z: -63.67330551147461
+        X: 203.8939971923828
+        Y: -160.75717163085938
+        Z: -19.50905990600586
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false

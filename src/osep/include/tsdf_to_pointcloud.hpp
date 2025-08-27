@@ -16,7 +16,6 @@ namespace std {
 template <>
 struct hash<std::tuple<int, int, int>> {
   std::size_t operator()(const std::tuple<int, int, int>& k) const {
-    // Simple hash combine
     return std::get<0>(k) ^ (std::get<1>(k) << 8) ^ (std::get<2>(k) << 16);
   }
 };
@@ -29,6 +28,16 @@ public:
 
 private:
   void callback(const nvblox_msgs::msg::VoxelBlockLayer::SharedPtr msg);
+
+  sensor_msgs::msg::PointCloud2 create_colored_pointcloud(
+    const nvblox_msgs::msg::VoxelBlockLayer::SharedPtr& msg,
+    std::unordered_map<std::tuple<int, int, int>, ColoredPoint>& current_points,
+    float voxel_res);
+
+  void update_static_accumulation(
+    const std::unordered_map<std::tuple<int, int, int>, ColoredPoint>& current_points);
+
+  sensor_msgs::msg::PointCloud2 create_static_pointcloud(const std_msgs::msg::Header& header);
 
   rclcpp::Subscription<nvblox_msgs::msg::VoxelBlockLayer>::SharedPtr sub_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_;
