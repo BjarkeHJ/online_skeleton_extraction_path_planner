@@ -8,8 +8,8 @@ def generate_launch_description():
             executable='tsdf_to_pointcloud_node',
             name='tsdf_to_pointcloud_node',
             parameters=[{
-                'output_topic': 'osep/tsdf_pointcloud',
-                'static_output_topic': 'osep/static_tsdf_pointcloud'
+                'output_topic': 'osep/tsdf/pointcloud',
+                'static_output_topic': 'osep/tsdf/static_pointcloud'
             }],
             output='screen'
         ),
@@ -18,8 +18,8 @@ def generate_launch_description():
             executable='static_pointcloud_postprocessor_node',
             name='static_pointcloud_postprocessor_node',
             parameters=[{
-                'input_topic': 'osep/static_tsdf_pointcloud',          
-                'output_topic': 'osep/upsampled_static_pointcloud'
+                'input_topic': 'osep/tsdf/static_pointcloud',
+                'output_topic': 'osep/tsdf/upsampled_static_pointcloud'
             }]
                     
         )

@@ -6,6 +6,7 @@
 #include <vector>
 #include <cmath>
 #include <cstring>
+#include <algorithm>
 
 // Only the hash specialization goes in std
 namespace std {
@@ -17,12 +18,64 @@ struct hash<std::tuple<int, int, int>> {
 };
 }
 
-// quantize should be in the global namespace or an anonymous namespace
+// Quantize a point to voxel indices
 inline std::tuple<int, int, int> quantize(float x, float y, float z, float res) {
     return std::make_tuple(
         static_cast<int>(std::round(x / res)),
         static_cast<int>(std::round(y / res)),
         static_cast<int>(std::round(z / res)));
+}
+
+// Helper: 2D convex hull (Graham scan, for XY projection)
+std::vector<std::array<float, 3>> convex_hull_xy(const std::vector<std::array<float, 3>>& points) {
+    if (points.size() < 3) return points;
+    std::vector<std::array<float, 3>> pts = points;
+    std::sort(pts.begin(), pts.end(), [](const auto& a, const auto& b) {
+        return a[0] < b[0] || (a[0] == b[0] && a[1] < b[1]);
+    });
+    std::vector<std::array<float, 3>> hull;
+    // Lower hull
+    for (const auto& pt : pts) {
+        while (hull.size() >= 2) {
+            auto& q = hull[hull.size()-2];
+            auto& r = hull[hull.size()-1];
+            if ((r[0]-q[0])*(pt[1]-q[1]) - (r[1]-q[1])*(pt[0]-q[0]) <= 0)
+                hull.pop_back();
+            else break;
+        }
+        hull.push_back(pt);
+    }
+    // Upper hull
+    size_t t = hull.size() + 1;
+    for (auto it = pts.rbegin(); it != pts.rend(); ++it) {
+        const auto& pt = *it;
+        while (hull.size() >= t) {
+            auto& q = hull[hull.size()-2];
+            auto& r = hull[hull.size()-1];
+            if ((r[0]-q[0])*(pt[1]-q[1]) - (r[1]-q[1])*(pt[0]-q[0]) <= 0)
+                hull.pop_back();
+            else break;
+        }
+        hull.push_back(pt);
+    }
+    hull.pop_back();
+    return hull;
+}
+
+// Linear interpolation between two points
+std::vector<std::array<float, 3>> interpolate_between(
+    const std::array<float, 3>& a, const std::array<float, 3>& b, int num_points)
+{
+    std::vector<std::array<float, 3>> result;
+    for (int i = 1; i < num_points; ++i) {
+        float t = float(i) / num_points;
+        result.push_back({
+            a[0] + t * (b[0] - a[0]),
+            a[1] + t * (b[1] - a[1]),
+            a[2] + t * (b[2] - a[2])
+        });
+    }
+    return result;
 }
 
 class StaticPointcloudPostprocessNode : public rclcpp::Node
@@ -31,8 +84,8 @@ public:
     StaticPointcloudPostprocessNode()
     : Node("static_pointcloud_postprocess_node")
     {
-        this->declare_parameter<std::string>("static_input_topic", "osep/static_tsdf_pointcloud");
-        this->declare_parameter<std::string>("output_topic", "osep/upsampled_static_pointcloud");
+        this->declare_parameter<std::string>("static_input_topic", "osep/tsdf/static_pointcloud");
+        this->declare_parameter<std::string>("output_topic", "osep/tsdf/upsampled_static_pointcloud");
         this->declare_parameter<double>("voxel_size", 1.0); // 1 m default
 
         static_input_topic_ = this->get_parameter("static_input_topic").as_string();
@@ -70,7 +123,7 @@ private:
         sensor_msgs::PointCloud2ConstIterator<float> iter_y(*msg, "y");
         sensor_msgs::PointCloud2ConstIterator<float> iter_z(*msg, "z");
         for (size_t i = 0; i < msg->width * msg->height; ++i, ++iter_x, ++iter_y, ++iter_z) {
-            auto key = quantize(*iter_x, *iter_y, *iter_z, voxel_size_);
+            auto key = quantize(*iter_x, *iter_y, *iter_z, voxel_size_*10);
             voxel_groups[key].push_back({*iter_x, *iter_y, *iter_z});
         }
 
@@ -82,9 +135,22 @@ private:
             }
         }
 
-        // 3. Upsample (stub: just copy for now)
-        // TODO: Replace this with your upsampling/curvy feature generation
-        std::vector<std::array<float, 3>> upsampled_points = filtered_points;
+        // 3. Curve upsampling along surface boundary
+        std::vector<std::array<float, 3>> upsampled_points;
+        for (const auto& kv : voxel_groups) {
+            const auto& group = kv.second;
+            if (group.size() < 3) continue;
+            auto hull = convex_hull_xy(group);
+            // Add hull points
+            upsampled_points.insert(upsampled_points.end(), hull.begin(), hull.end());
+            // Interpolate between hull points
+            for (size_t i = 0; i < hull.size(); ++i) {
+                const auto& a = hull[i];
+                const auto& b = hull[(i+1)%hull.size()];
+                auto interp = interpolate_between(a, b, 3); // 2 extra points between each hull edge
+                upsampled_points.insert(upsampled_points.end(), interp.begin(), interp.end());
+            }
+        }
 
         // 4. Publish upsampled pointcloud
         sensor_msgs::msg::PointCloud2 out_msg;
