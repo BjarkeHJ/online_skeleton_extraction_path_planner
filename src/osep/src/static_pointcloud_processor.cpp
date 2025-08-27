@@ -1,30 +1,11 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
-#include <sensor_msgs/point_cloud2_iterator.hpp>
-#include <unordered_map>
-#include <tuple>
+#include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
+#include <pcl/octree/octree_pointcloud_occupancy.h>
+#include <pcl_conversions/pcl_conversions.h>
 #include <vector>
-#include <cmath>
-#include <cstring>
-#include <algorithm>
-
-// Only the hash specialization goes in std
-namespace std {
-template <>
-struct hash<std::tuple<int, int, int>> {
-  std::size_t operator()(const std::tuple<int, int, int>& k) const {
-    return std::get<0>(k) ^ (std::get<1>(k) << 8) ^ (std::get<2>(k) << 16);
-  }
-};
-}
-
-// Quantize a point to voxel indices
-inline std::tuple<int, int, int> quantize(float x, float y, float z, float res) {
-    return std::make_tuple(
-        static_cast<int>(std::round(x / res)),
-        static_cast<int>(std::round(y / res)),
-        static_cast<int>(std::round(z / res)));
-}
+#include <Eigen/Core>
 
 class StaticPointcloudPostprocessNode : public rclcpp::Node
 {
@@ -34,7 +15,7 @@ public:
     {
         this->declare_parameter<std::string>("static_input_topic", "osep/tsdf/static_pointcloud");
         this->declare_parameter<std::string>("output_topic", "osep/tsdf/upsampled_static_pointcloud");
-        this->declare_parameter<double>("voxel_size", 1.0); // 1 m default
+        this->declare_parameter<double>("voxel_size", 1.0);  // 1.0 m by default
 
         static_input_topic_ = this->get_parameter("static_input_topic").as_string();
         output_topic_ = this->get_parameter("output_topic").as_string();
@@ -59,102 +40,60 @@ private:
 
     void callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
     {
-        if (msg->width * msg->height == last_point_count_) {
-            // No change, publish previous result
-            pub_->publish(last_msg_);
+        size_t current_count = msg->width * msg->height;
+        if (current_count <= last_point_count_) {
+            if (!last_msg_.data.empty())
+                pub_->publish(last_msg_);
             return;
         }
+        last_point_count_ = current_count;
 
-        // 1. Remove sparse points (group by original voxel_size)
-        std::unordered_map<std::tuple<int, int, int>, std::vector<std::array<float, 3>>> coarse_voxels;
-        sensor_msgs::PointCloud2ConstIterator<float> iter_x(*msg, "x");
-        sensor_msgs::PointCloud2ConstIterator<float> iter_y(*msg, "y");
-        sensor_msgs::PointCloud2ConstIterator<float> iter_z(*msg, "z");
-        for (size_t i = 0; i < msg->width * msg->height; ++i, ++iter_x, ++iter_y, ++iter_z) {
-            auto key = quantize(*iter_x, *iter_y, *iter_z, voxel_size_*10);
-            coarse_voxels[key].push_back({*iter_x, *iter_y, *iter_z});
-        }
-        std::vector<std::array<float, 3>> filtered_points;
-        for (const auto& kv : coarse_voxels) {
-            if (kv.second.size() >= 30) {
-                filtered_points.insert(filtered_points.end(), kv.second.begin(), kv.second.end());
-            }
-        }
+        // Convert ROS msg to PCL cloud
+        pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
+        pcl::fromROSMsg(*msg, *cloud);
 
-        // 2. Upsample to fine grid (0.01 * voxel_size)
-        double fine_res = voxel_size_ * 0.01;
-        std::unordered_map<std::tuple<int, int, int>, std::array<float, 3>> fine_points;
-        for (const auto& pt : filtered_points) {
-            auto key = quantize(pt[0], pt[1], pt[2], fine_res);
-            fine_points[key] = pt;
-        }
+        // Create octree at voxel_size_ resolution
+        pcl::octree::OctreePointCloudOccupancy<pcl::PointXYZ> octree(voxel_size_);
+        octree.setInputCloud(cloud);
+        octree.addPointsFromInputCloud();
 
-        // 3. (Optional) Smooth the surface (simple mean filter)
-        std::unordered_map<std::tuple<int, int, int>, std::array<float, 3>> smoothed_points;
-        std::array<std::tuple<int, int, int>, 6> neighbors = {{
-            {1,0,0}, {-1,0,0}, {0,1,0}, {0,-1,0}, {0,0,1}, {0,0,-1}
-        }};
-        for (const auto& kv : fine_points) {
-            std::array<float, 3> sum = kv.second;
-            int count = 1;
-            for (const auto& n : neighbors) {
-                auto neighbor_key = std::make_tuple(
-                    std::get<0>(kv.first) + std::get<0>(n),
-                    std::get<1>(kv.first) + std::get<1>(n),
-                    std::get<2>(kv.first) + std::get<2>(n)
-                );
-                auto it = fine_points.find(neighbor_key);
-                if (it != fine_points.end()) {
-                    sum[0] += it->second[0];
-                    sum[1] += it->second[1];
-                    sum[2] += it->second[2];
-                    ++count;
+        // Extract voxel centers
+        std::vector<pcl::PointXYZ, Eigen::aligned_allocator<pcl::PointXYZ>> voxelCenters;
+        octree.getOccupiedVoxelCenters(voxelCenters);
+
+        int N = 3;
+        double sub_step = voxel_size_ / N;
+        std::vector<pcl::PointXYZ, Eigen::aligned_allocator<pcl::PointXYZ>> upsampled_points;
+        for (const auto& center : voxelCenters) {
+            double start_x = center.x - voxel_size_ / 2.0 + sub_step / 2.0;
+            double start_y = center.y - voxel_size_ / 2.0 + sub_step / 2.0;
+            double start_z = center.z - voxel_size_ / 2.0 + sub_step / 2.0;
+            for (int ix = 0; ix < N; ++ix) {
+                for (int iy = 0; iy < N; ++iy) {
+                    for (int iz = 0; iz < N; ++iz) {
+                        pcl::PointXYZ pt;
+                        pt.x = start_x + ix * sub_step;
+                        pt.y = start_y + iy * sub_step;
+                        pt.z = start_z + iz * sub_step;
+                        upsampled_points.push_back(pt);
+                    }
                 }
             }
-            smoothed_points[kv.first] = {sum[0]/count, sum[1]/count, sum[2]/count};
         }
 
-        // 4. Keep only surface points (at least one neighbor missing)
-        std::vector<std::array<float, 3>> surface_points;
-        for (const auto& kv : smoothed_points) {
-            bool is_surface = false;
-            for (const auto& n : neighbors) {
-                auto neighbor_key = std::make_tuple(
-                    std::get<0>(kv.first) + std::get<0>(n),
-                    std::get<1>(kv.first) + std::get<1>(n),
-                    std::get<2>(kv.first) + std::get<2>(n)
-                );
-                if (smoothed_points.find(neighbor_key) == smoothed_points.end()) {
-                    is_surface = true;
-                    break;
-                }
-            }
-            if (is_surface) {
-                surface_points.push_back(kv.second);
-            }
-        }
+        pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_upsampled(new pcl::PointCloud<pcl::PointXYZ>);
+        cloud_upsampled->points = upsampled_points;
+        cloud_upsampled->width = static_cast<uint32_t>(cloud_upsampled->points.size());
+        cloud_upsampled->height = 1;
+        cloud_upsampled->is_dense = true;
 
-        // 5. Publish surface pointcloud
-        sensor_msgs::msg::PointCloud2 out_msg;
-        out_msg.header = msg->header;
-        out_msg.height = 1;
-        out_msg.width = surface_points.size();
-        out_msg.is_dense = false;
-        sensor_msgs::PointCloud2Modifier modifier(out_msg);
-        modifier.setPointCloud2FieldsByString(1, "xyz");
-        modifier.resize(surface_points.size());
+        // Convert back to ROS msg
+        sensor_msgs::msg::PointCloud2 output;
+        pcl::toROSMsg(*cloud_upsampled, output);
+        output.header = msg->header;
 
-        sensor_msgs::PointCloud2Iterator<float> ox(out_msg, "x");
-        sensor_msgs::PointCloud2Iterator<float> oy(out_msg, "y");
-        sensor_msgs::PointCloud2Iterator<float> oz(out_msg, "z");
-        for (const auto& pt : surface_points) {
-            *ox = pt[0]; *oy = pt[1]; *oz = pt[2];
-            ++ox; ++oy; ++oz;
-        }
-
-        pub_->publish(out_msg);
-        last_point_count_ = msg->width * msg->height;
-        last_msg_ = out_msg;
+        pub_->publish(output);
+        last_msg_ = output;
     }
 };
 

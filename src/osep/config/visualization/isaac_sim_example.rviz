@@ -13,9 +13,7 @@ Panels:
         - /Navigation1
         - /Map1
         - /PointCloud21
-        - /PointCloud21/Status1
         - /PointCloud22
-        - /PointCloud22/Status1
       Splitter Ratio: 0.6176470518112183
     Tree Height: 1180
   - Class: rviz_common/Selection
@@ -454,7 +452,7 @@ Visualization Manager:
       Selectable: true
       Size (Pixels): 3
       Size (m): 1
-      Style: Squares
+      Style: Spheres
       Topic:
         Depth: 5
         Durability Policy: Volatile
