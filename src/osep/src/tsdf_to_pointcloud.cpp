@@ -15,6 +15,23 @@ inline std::tuple<int, int, int> quantize(float x, float y, float z, float res =
 }
 }
 
+TsdfToPointCloudNode::TsdfToPointCloudNode()
+: Node("tsdf_to_pointcloud_node")
+{
+  this->declare_parameter<std::string>("output_topic", "osep/tsdf_pointcloud");
+  this->declare_parameter<std::string>("static_output_topic", "osep/static_tsdf_pointcloud");
+  this->declare_parameter<int>("min_observations", 5);
+  std::string output_topic = this->get_parameter("output_topic").as_string();
+  std::string static_output_topic = this->get_parameter("static_output_topic").as_string();
+  min_observations_ = this->get_parameter("min_observations").as_int();
+
+  sub_ = this->create_subscription<nvblox_msgs::msg::VoxelBlockLayer>(
+    "/nvblox_node/tsdf_layer", 10,
+    std::bind(&TsdfToPointCloudNode::callback, this, std::placeholders::_1));
+  pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(output_topic, 10);
+  static_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(static_output_topic, 1);
+}
+
 sensor_msgs::msg::PointCloud2 TsdfToPointCloudNode::create_colored_pointcloud(
     const nvblox_msgs::msg::VoxelBlockLayer::SharedPtr& msg,
     std::unordered_map<std::tuple<int, int, int>, ColoredPoint>& current_points,
@@ -74,17 +91,13 @@ sensor_msgs::msg::PointCloud2 TsdfToPointCloudNode::create_colored_pointcloud(
 void TsdfToPointCloudNode::update_static_accumulation(
     const std::unordered_map<std::tuple<int, int, int>, ColoredPoint>& current_points)
 {
-  // Remove points not seen in this frame (basic outlier removal)
-  for (auto it = accumulated_points_.begin(); it != accumulated_points_.end(); ) {
-    if (current_points.find(it->first) == current_points.end()) {
-      it = accumulated_points_.erase(it);
-    } else {
-      ++it;
-    }
-  }
-  // Add new points
   for (const auto & kv : current_points) {
-    accumulated_points_[kv.first] = kv.second;
+    auto key = kv.first;
+    point_seen_count_[key]++;
+    // Only add to static if seen enough times
+    if (point_seen_count_[key] == min_observations_) {
+      accumulated_points_.emplace(key, kv.second);
+    }
   }
 }
 
@@ -117,21 +130,6 @@ sensor_msgs::msg::PointCloud2 TsdfToPointCloudNode::create_static_pointcloud(con
   static_msg.width = accumulated_points_.size();
   static_msg.is_dense = false;
   return static_msg;
-}
-
-TsdfToPointCloudNode::TsdfToPointCloudNode()
-: Node("tsdf_to_pointcloud_node")
-{
-  this->declare_parameter<std::string>("output_topic", "osep/tsdf_pointcloud");
-  this->declare_parameter<std::string>("static_output_topic", "osep/static_tsdf_pointcloud");
-  std::string output_topic = this->get_parameter("output_topic").as_string();
-  std::string static_output_topic = this->get_parameter("static_output_topic").as_string();
-
-  sub_ = this->create_subscription<nvblox_msgs::msg::VoxelBlockLayer>(
-    "/nvblox_node/tsdf_layer", 10,
-    std::bind(&TsdfToPointCloudNode::callback, this, std::placeholders::_1));
-  pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(output_topic, 10);
-  static_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(static_output_topic, 1);
 }
 
 void TsdfToPointCloudNode::callback(const nvblox_msgs::msg::VoxelBlockLayer::SharedPtr msg)
