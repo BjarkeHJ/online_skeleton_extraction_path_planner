@@ -8,7 +8,13 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
-    <build_depend>isaac_ros_common</build_depend>
+  <build_depend>isaac_ros_common</build_depend>
+  <build_depend>rclcpp</build_depend>
+  <exec_depend>rclcpp</exec_depend>
+
+  <build_depend>sensor_msgs</build_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+
 
   <!-- Utils -->
   <exec_depend>isaac_ros_launch_utils</exec_depend>
@@ -16,6 +22,8 @@
 
   <!-- Nvblox -->
   <exec_depend>nvblox_ros</exec_depend>
+  <build_depend>nvblox_msgs</build_depend>
+  <exec_depend>nvblox_msgs</exec_depend>
 
   <!-- Visual SLAM -->
   <exec_depend>isaac_ros_visual_slam</exec_depend>
