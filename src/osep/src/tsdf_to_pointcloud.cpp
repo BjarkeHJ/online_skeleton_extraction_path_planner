@@ -3,27 +3,39 @@
 #include <nvblox_msgs/msg/voxel_block.hpp>
 #include <nvblox_msgs/msg/index3_d.hpp>
 #include <std_msgs/msg/color_rgba.hpp>
+#include <cmath>
 #include <cstring>
+
+namespace {
+inline std::tuple<int, int, int> quantize(float x, float y, float z, float res = 0.01f) {
+  return std::make_tuple(
+    static_cast<int>(std::round(x / res)),
+    static_cast<int>(std::round(y / res)),
+    static_cast<int>(std::round(z / res)));
+}
+}
 
 TsdfToPointCloudNode::TsdfToPointCloudNode()
 : Node("tsdf_to_pointcloud_node")
 {
   this->declare_parameter<std::string>("output_topic", "osep/tsdf_pointcloud");
+  this->declare_parameter<std::string>("static_output_topic", "osep/static_tsdf_pointcloud");
   std::string output_topic = this->get_parameter("output_topic").as_string();
+  std::string static_output_topic = this->get_parameter("static_output_topic").as_string();
 
   sub_ = this->create_subscription<nvblox_msgs::msg::VoxelBlockLayer>(
     "/nvblox_node/tsdf_layer", 10,
     std::bind(&TsdfToPointCloudNode::callback, this, std::placeholders::_1));
   pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(output_topic, 10);
+  static_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(static_output_topic, 1);
 }
 
 void TsdfToPointCloudNode::callback(const nvblox_msgs::msg::VoxelBlockLayer::SharedPtr msg)
 {
+  // --- Normal (non-accumulated) pointcloud ---
   sensor_msgs::msg::PointCloud2 cloud_msg;
   cloud_msg.header = msg->header;
   cloud_msg.height = 1;
-
-  // Define fields: x, y, z, rgb
   sensor_msgs::PointCloud2Modifier modifier(cloud_msg);
   modifier.setPointCloud2FieldsByString(2, "xyz", "rgb");
 
@@ -38,11 +50,19 @@ void TsdfToPointCloudNode::callback(const nvblox_msgs::msg::VoxelBlockLayer::Sha
   sensor_msgs::PointCloud2Iterator<float> iter_z(cloud_msg, "z");
   sensor_msgs::PointCloud2Iterator<uint8_t> iter_rgb(cloud_msg, "rgb");
 
+  // --- For static accumulation ---
+  std::unordered_map<std::tuple<int, int, int>, ColoredPoint> current_points;
+  float voxel_res = 0.01f; // 1cm grid for deduplication
+
   for (const auto & block : msg->blocks) {
     for (size_t i = 0; i < block.centers.size(); ++i) {
-      *iter_x = block.centers[i].x;
-      *iter_y = block.centers[i].y;
-      *iter_z = block.centers[i].z;
+      float x = block.centers[i].x;
+      float y = block.centers[i].y;
+      float z = block.centers[i].z;
+
+      *iter_x = x;
+      *iter_y = y;
+      *iter_z = z;
 
       uint8_t r = 255, g = 255, b = 255;
       if (!block.colors.empty()) {
@@ -51,19 +71,64 @@ void TsdfToPointCloudNode::callback(const nvblox_msgs::msg::VoxelBlockLayer::Sha
         g = static_cast<uint8_t>(color.g * 255.0f);
         b = static_cast<uint8_t>(color.b * 255.0f);
       }
-      // Pack RGB into float (PCL style)
       uint32_t rgb = (r << 16) | (g << 8) | b;
       float rgb_float;
       std::memcpy(&rgb_float, &rgb, sizeof(float));
       *reinterpret_cast<float*>(&(*iter_rgb)) = rgb_float;
+
+      // For static accumulation
+      auto key = quantize(x, y, z, voxel_res);
+      current_points[key] = ColoredPoint{x, y, z, r, g, b};
 
       ++iter_x; ++iter_y; ++iter_z; ++iter_rgb;
     }
   }
   cloud_msg.width = total_points;
   cloud_msg.is_dense = false;
-
   pub_->publish(cloud_msg);
+
+  // --- Accumulate static pointcloud ---
+  // Remove points not seen in this frame (basic outlier removal)
+  for (auto it = accumulated_points_.begin(); it != accumulated_points_.end(); ) {
+    if (current_points.find(it->first) == current_points.end()) {
+      it = accumulated_points_.erase(it);
+    } else {
+      ++it;
+    }
+  }
+  // Add new points
+  for (const auto & kv : current_points) {
+    accumulated_points_[kv.first] = kv.second;
+  }
+
+  // Publish static pointcloud (always white)
+  sensor_msgs::msg::PointCloud2 static_msg;
+  static_msg.header = msg->header;
+  static_msg.height = 1;
+  sensor_msgs::PointCloud2Modifier static_modifier(static_msg);
+  static_modifier.setPointCloud2FieldsByString(2, "xyz", "rgb");
+  static_modifier.resize(accumulated_points_.size());
+
+  sensor_msgs::PointCloud2Iterator<float> s_iter_x(static_msg, "x");
+  sensor_msgs::PointCloud2Iterator<float> s_iter_y(static_msg, "y");
+  sensor_msgs::PointCloud2Iterator<float> s_iter_z(static_msg, "z");
+  sensor_msgs::PointCloud2Iterator<uint8_t> s_iter_rgb(static_msg, "rgb");
+
+  for (const auto & kv : accumulated_points_) {
+    const auto & pt = kv.second;
+    *s_iter_x = pt.x;
+    *s_iter_y = pt.y;
+    *s_iter_z = pt.z;
+    // Always set white color
+    uint32_t rgb = (255 << 16) | (255 << 8) | 255;
+    float rgb_float;
+    std::memcpy(&rgb_float, &rgb, sizeof(float));
+    *reinterpret_cast<float*>(&(*s_iter_rgb)) = rgb_float;
+    ++s_iter_x; ++s_iter_y; ++s_iter_z; ++s_iter_rgb;
+  }
+  static_msg.width = accumulated_points_.size();
+  static_msg.is_dense = false;
+  static_pub_->publish(static_msg);
 }
 
 int main(int argc, char ** argv)
