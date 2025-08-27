@@ -5,16 +5,23 @@ find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_auto REQUIRED)
 ament_auto_find_build_dependencies()
 
-
-add_executable(nvblox_voxel_map src/nvblox_voxel_map.cpp)
-ament_target_dependencies(nvblox_voxel_map
+add_executable(tsdf_to_pointcloud_node src/tsdf_to_pointcloud.cpp)
+target_include_directories(tsdf_to_pointcloud_node PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+ament_target_dependencies(tsdf_to_pointcloud_node
   rclcpp
   sensor_msgs
   nvblox_msgs
 )
 
-install(TARGETS nvblox_voxel_map
+install(TARGETS tsdf_to_pointcloud_node
   DESTINATION lib/${PROJECT_NAME}
+)
+
+install(DIRECTORY include/
+  DESTINATION include/
 )
 
 install(DIRECTORY config launch

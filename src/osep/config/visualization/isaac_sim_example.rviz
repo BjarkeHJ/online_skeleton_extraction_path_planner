@@ -8,9 +8,11 @@ Panels:
         - /TF1/Frames1
         - /TF1/Tree1
         - /Nvblox1
+        - /Nvblox1/Nvblox Voxels1
         - /Sensors1
         - /Navigation1
         - /Map1
+        - /PointCloud21
       Splitter Ratio: 0.6176470518112183
     Tree Height: 1083
   - Class: rviz_common/Selection
@@ -77,7 +79,7 @@ Visualization Manager:
         - Ceiling Height: 1.5
           Class: nvblox_rviz_plugin/NvbloxVoxelBlockLayer
           Cut Ceiling: false
-          Enabled: true
+          Enabled: false
           Name: Nvblox Voxels
           Topic:
             Depth: 5
@@ -86,7 +88,7 @@ Visualization Manager:
             History Policy: Keep Last
             Reliability Policy: Reliable
             Value: /nvblox_node/color_layer
-          Value: true
+          Value: false
         - Class: rviz_default_plugins/Marker
           Enabled: false
           Name: Map Slice Bounds
@@ -394,6 +396,40 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /osep/path/raw_path
       Value: true
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz_default_plugins/PointCloud2
+      Color: 255; 255; 255
+      Color Transformer: RGB8
+      Decay Time: 30
+      Enabled: true
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Max Intensity: 4096
+      Min Color: 0; 0; 0
+      Min Intensity: 0
+      Name: PointCloud2
+      Position Transformer: XYZ
+      Selectable: true
+      Size (Pixels): 3
+      Size (m): 1
+      Style: Boxes
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /osep/tsdf_pointcloud
+      Use Fixed Frame: true
+      Use rainbow: true
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 212; 212; 212
@@ -447,18 +483,18 @@ Visualization Manager:
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 186.0184783935547
-        Y: -98.54793548583984
-        Z: -84.28311157226562
+        X: 180.94708251953125
+        Y: -113.07759094238281
+        Z: -72.64656829833984
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.0597968101501465
+      Pitch: 0.9047969579696655
       Target Frame: camera_link
       Value: Orbit (rviz)
-      Yaw: 1.775412678718567
+      Yaw: 1.5104129314422607
     Saved: ~
 Window Geometry:
   Color Image:

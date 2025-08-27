@@ -88,5 +88,13 @@ def generate_launch_description() -> LaunchDescription:
                 "camera": NvbloxCamera.isaac_sim,
             },
         )
+    )
+    # OSEP
+    actions.append(
+        lu.include(
+            "osep",
+            "launch/osep_nvblox.launch.py",
+        )
     )    
+
     return LaunchDescription(actions)

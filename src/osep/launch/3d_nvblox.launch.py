@@ -17,6 +17,7 @@
 
 from isaac_ros_launch_utils.all_types import *
 import isaac_ros_launch_utils as lu
+from launch_ros.actions import Node
 
 from nvblox_ros_python_utils.nvblox_launch_utils import NvbloxMode, NvbloxCamera
 from nvblox_ros_python_utils.nvblox_constants import NVBLOX_CONTAINER_NAME
@@ -87,6 +88,16 @@ def generate_launch_description() -> LaunchDescription:
                 "mode": args.mode,
                 "camera": NvbloxCamera.isaac_sim,
             },
+        )
+    )
+
+    actions.append(
+        Node(
+            package='osep',
+            executable='tsdf_to_pointcloud_node',
+            name='tsdf_to_pointcloud_node',
+            parameters=[{'output_topic': 'osep/tsdf_pointcloud'}],  # Set your topic here
+            output='screen'
         )
     )
 
