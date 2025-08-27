@@ -29,9 +29,6 @@ public:
 private:
   void callback(const nvblox_msgs::msg::VoxelBlockLayer::SharedPtr msg);
 
-  std::unordered_map<std::tuple<int, int, int>, int> point_seen_count_;
-  int min_observations_ = 3; // Or make this a parameter
-
   sensor_msgs::msg::PointCloud2 create_colored_pointcloud(
     const nvblox_msgs::msg::VoxelBlockLayer::SharedPtr& msg,
     std::unordered_map<std::tuple<int, int, int>, ColoredPoint>& current_points,

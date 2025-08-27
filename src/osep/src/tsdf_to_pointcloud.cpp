@@ -20,10 +20,8 @@ TsdfToPointCloudNode::TsdfToPointCloudNode()
 {
   this->declare_parameter<std::string>("output_topic", "osep/tsdf_pointcloud");
   this->declare_parameter<std::string>("static_output_topic", "osep/static_tsdf_pointcloud");
-  this->declare_parameter<int>("min_observations", 5);
   std::string output_topic = this->get_parameter("output_topic").as_string();
   std::string static_output_topic = this->get_parameter("static_output_topic").as_string();
-  min_observations_ = this->get_parameter("min_observations").as_int();
 
   sub_ = this->create_subscription<nvblox_msgs::msg::VoxelBlockLayer>(
     "/nvblox_node/tsdf_layer", 10,
@@ -91,13 +89,9 @@ sensor_msgs::msg::PointCloud2 TsdfToPointCloudNode::create_colored_pointcloud(
 void TsdfToPointCloudNode::update_static_accumulation(
     const std::unordered_map<std::tuple<int, int, int>, ColoredPoint>& current_points)
 {
+  // Only add new points, never remove
   for (const auto & kv : current_points) {
-    auto key = kv.first;
-    point_seen_count_[key]++;
-    // Only add to static if seen enough times
-    if (point_seen_count_[key] == min_observations_) {
-      accumulated_points_.emplace(key, kv.second);
-    }
+    accumulated_points_.emplace(kv.first, kv.second);
   }
 }
 
