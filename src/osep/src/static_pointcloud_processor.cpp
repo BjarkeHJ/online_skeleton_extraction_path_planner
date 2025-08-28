@@ -21,7 +21,7 @@ public:
         this->declare_parameter<std::string>("static_input_topic", "osep/tsdf/static_pointcloud");
         this->declare_parameter<std::string>("output_topic", "osep/tsdf/shell_static_pointcloud");
         this->declare_parameter<double>("voxel_size", 1.0);  // 1.0 m by default
-        this->declare_parameter<int>("upsample_N", 4);       // Default upsampling factor
+        this->declare_parameter<int>("upsample_N", 2);       // Number of upsample-opening cycles
 
         static_input_topic_ = this->get_parameter("static_input_topic").as_string();
         output_topic_ = this->get_parameter("output_topic").as_string();
@@ -63,85 +63,67 @@ private:
         );
     }
 
-    // Helper: Upsample a voxel face into a grid of points
-    void upsample_voxel_face(
-        const Eigen::Vector3f& voxel_center,
-        float voxel_size,
-        int upsample_N,
-        int face, // 0:+x, 1:-x, 2:+y, 3:-y, 4:+z, 5:-z
-        std::vector<pcl::PointXYZ, Eigen::aligned_allocator<pcl::PointXYZ>>& out_points)
+    // 3D morphological opening (erosion then dilation) with 3x3x3 kernel
+    std::set<std::tuple<int,int,int>> morphological_opening_3d(
+        const std::set<std::tuple<int,int,int>>& voxels)
     {
-        float half = voxel_size / 2.0f;
-        float step = voxel_size / upsample_N;
-        Eigen::Vector3f face_center = voxel_center;
-        Eigen::Vector3f u, v, normal;
-        switch(face) {
-            case 0: face_center.x() += half; u = {0, 1, 0}; v = {0, 0, 1}; normal = {1, 0, 0}; break; // +x
-            case 1: face_center.x() -= half; u = {0, 1, 0}; v = {0, 0, 1}; normal = {-1, 0, 0}; break; // -x
-            case 2: face_center.y() += half; u = {1, 0, 0}; v = {0, 0, 1}; normal = {0, 1, 0}; break; // +y
-            case 3: face_center.y() -= half; u = {1, 0, 0}; v = {0, 0, 1}; normal = {0, -1, 0}; break; // -y
-            case 4: face_center.z() += half; u = {1, 0, 0}; v = {0, 1, 0}; normal = {0, 0, 1}; break; // +z
-            case 5: face_center.z() -= half; u = {1, 0, 0}; v = {0, 1, 0}; normal = {0, 0, -1}; break; // -z
+        // Erosion
+        std::set<std::tuple<int,int,int>> eroded;
+        for (const auto& v : voxels) {
+            int present = 0;
+            for (int dx = -1; dx <= 1; ++dx)
+                for (int dy = -1; dy <= 1; ++dy)
+                    for (int dz = -1; dz <= 1; ++dz)
+                        if (!(dx == 0 && dy == 0 && dz == 0) &&
+                            voxels.count({std::get<0>(v)+dx, std::get<1>(v)+dy, std::get<2>(v)+dz}))
+                            ++present;
+            if (present >= 6) // adjust threshold as needed
+                eroded.insert(v);
         }
-        // The lower-left corner of the face
-        Eigen::Vector3f corner = face_center - 0.5f * voxel_size * u - 0.5f * voxel_size * v;
-        for (int i = 0; i < upsample_N; ++i) {
-            for (int j = 0; j < upsample_N; ++j) {
-                // Center each mini-voxel on the face, then move it half a step toward the voxel center
-                Eigen::Vector3f pt = corner + (i + 0.5f) * step * u + (j + 0.5f) * step * v - 0.5f * step * normal;
-                out_points.emplace_back(pt.x(), pt.y(), pt.z());
-            }
+        // Dilation
+        std::set<std::tuple<int,int,int>> dilated = eroded;
+        for (const auto& v : eroded) {
+            for (int dx = -1; dx <= 1; ++dx)
+                for (int dy = -1; dy <= 1; ++dy)
+                    for (int dz = -1; dz <= 1; ++dz)
+                        dilated.insert({std::get<0>(v)+dx, std::get<1>(v)+dy, std::get<2>(v)+dz});
         }
+        return dilated;
     }
 
-    // Helper: Find connected voxel groups and keep only large ones
-    std::set<std::tuple<int,int,int>> filter_sparse_voxel_groups(
-        const std::set<std::tuple<int,int,int>>& occupied_voxels,
-        int min_group_size)
+    // Upsample voxels by factor 2
+    std::set<std::tuple<int,int,int>> upsample_voxels_by_2(
+        const std::set<std::tuple<int,int,int>>& voxels)
     {
-        std::set<std::tuple<int,int,int>> result;
-        std::set<std::tuple<int,int,int>> visited;
-
-        // Generate all 26 neighbor offsets (excluding 0,0,0)
-        std::vector<std::tuple<int,int,int>> neighbors;
-        for (int dx = -1; dx <= 1; ++dx) {
-            for (int dy = -1; dy <= 1; ++dy) {
-                for (int dz = -1; dz <= 1; ++dz) {
-                    if (dx == 0 && dy == 0 && dz == 0) continue;
-                    neighbors.emplace_back(dx, dy, dz);
-                }
-            }
+        std::set<std::tuple<int,int,int>> upsampled;
+        for (const auto& v : voxels) {
+            int x = std::get<0>(v) * 2;
+            int y = std::get<1>(v) * 2;
+            int z = std::get<2>(v) * 2;
+            for (int dx = 0; dx < 2; ++dx)
+                for (int dy = 0; dy < 2; ++dy)
+                    for (int dz = 0; dz < 2; ++dz)
+                        upsampled.insert({x+dx, y+dy, z+dz});
         }
+        return upsampled;
+    }
 
-        for (const auto& voxel : occupied_voxels) {
-            if (visited.count(voxel)) continue;
-            // BFS for connected component
-            std::vector<std::tuple<int,int,int>> queue = {voxel};
-            std::vector<std::tuple<int,int,int>> group;
-            visited.insert(voxel);
-            while (!queue.empty()) {
-                auto v = queue.back();
-                queue.pop_back();
-                group.push_back(v);
-                int ix = std::get<0>(v);
-                int iy = std::get<1>(v);
-                int iz = std::get<2>(v);
-                for (const auto& n : neighbors) {
-                    int nx = ix + std::get<0>(n);
-                    int ny = iy + std::get<1>(n);
-                    int nz = iz + std::get<2>(n);
-                    auto nidx = std::make_tuple(nx, ny, nz);
-                    if (occupied_voxels.count(nidx) && !visited.count(nidx)) {
-                        visited.insert(nidx);
-                        queue.push_back(nidx);
-                    }
-                }
-            }
-            if (group.size() >= static_cast<size_t>(min_group_size)) {
-                result.insert(group.begin(), group.end());
-            }
+    // Extract outer shell voxels
+    std::set<std::tuple<int,int,int>> extract_shell(
+        const std::set<std::tuple<int,int,int>>& voxels)
+    {
+        std::set<std::tuple<int,int,int>> shell;
+        for (const auto& v : voxels) {
+            bool is_shell = false;
+            for (int dx = -1; dx <= 1 && !is_shell; ++dx)
+                for (int dy = -1; dy <= 1 && !is_shell; ++dy)
+                    for (int dz = -1; dz <= 1 && !is_shell; ++dz)
+                        if ((dx != 0 || dy != 0 || dz != 0) &&
+                            !voxels.count({std::get<0>(v)+dx, std::get<1>(v)+dy, std::get<2>(v)+dz}))
+                            is_shell = true;
+            if (is_shell) shell.insert(v);
         }
-        return result;
+        return shell;
     }
 
     void callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
@@ -154,63 +136,51 @@ private:
             }
             return;
         }
-        // Write that we are processing as information
         RCLCPP_INFO(this->get_logger(), "Processing point cloud with %zu points", current_count);
         last_point_count_ = current_count;
 
         // 1. Voxelize input at voxel_size_
-        std::map<std::tuple<int,int,int>, int> voxel_map;
+        std::set<std::tuple<int,int,int>> voxels;
         sensor_msgs::PointCloud2ConstIterator<float> iter_x(*msg, "x");
         sensor_msgs::PointCloud2ConstIterator<float> iter_y(*msg, "y");
         sensor_msgs::PointCloud2ConstIterator<float> iter_z(*msg, "z");
         for (size_t i = 0; i < msg->width * msg->height; ++i, ++iter_x, ++iter_y, ++iter_z) {
-            auto idx = quantize(*iter_x, *iter_y, *iter_z, voxel_size_);
-            voxel_map[idx]++;
+            voxels.insert(quantize(*iter_x, *iter_y, *iter_z, voxel_size_));
         }
 
-        // 2. Find all occupied voxels (at least 1 point)
-        std::set<std::tuple<int,int,int>> occupied_voxels;
-        for (const auto& kv : voxel_map) {
-            occupied_voxels.insert(kv.first);
-        }
+        int N = upsample_N_;
+        double res = voxel_size_;
 
-        // 3. Filter out small groups (keep only groups with at least 100 voxels)
-        occupied_voxels = filter_sparse_voxel_groups(occupied_voxels, 100);
-
-        // 4. For each voxel, check each face for neighbors
-        std::vector<pcl::PointXYZ, Eigen::aligned_allocator<pcl::PointXYZ>> shell_points;
-        const int dx[6] = {1, -1, 0, 0, 0, 0};
-        const int dy[6] = {0, 0, 1, -1, 0, 0};
-        const int dz[6] = {0, 0, 0, 0, 1, -1};
-        for (const auto& idx : occupied_voxels) {
-            int ix = std::get<0>(idx);
-            int iy = std::get<1>(idx);
-            int iz = std::get<2>(idx);
-            Eigen::Vector3f center = voxel_center(ix, iy, iz, voxel_size_);
-            for (int face = 0; face < 6; ++face) {
-                auto nidx = std::make_tuple(ix + dx[face], iy + dy[face], iz + dz[face]);
-                if (occupied_voxels.count(nidx) == 0) {
-                    upsample_voxel_face(center, voxel_size_, upsample_N_, face, shell_points);
-                }
+        if (N > 0) {
+            // First upsample only
+            voxels = upsample_voxels_by_2(voxels);
+            res /= 2.0;
+            // For N > 1, do opening after each further upsample
+            for (int n = 1; n < N; ++n) {
+                voxels = morphological_opening_3d(voxels);
+                voxels = upsample_voxels_by_2(voxels);
+                res /= 2.0;
             }
         }
 
-        // 5. Output as point cloud
+        // Extract shell at final resolution
+        std::set<std::tuple<int,int,int>> shell_voxels = extract_shell(voxels);
+
+        // Output as point cloud
+        std::vector<pcl::PointXYZ, Eigen::aligned_allocator<pcl::PointXYZ>> shell_points;
+        for (const auto& idx : shell_voxels) {
+            Eigen::Vector3f center = voxel_center(std::get<0>(idx), std::get<1>(idx), std::get<2>(idx), res);
+            shell_points.emplace_back(center.x(), center.y(), center.z());
+        }
+
         pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_shell(new pcl::PointCloud<pcl::PointXYZ>);
         cloud_shell->points = shell_points;
         cloud_shell->width = static_cast<uint32_t>(shell_points.size());
         cloud_shell->height = 1;
         cloud_shell->is_dense = true;
 
-        // Apply voxel filter to remove duplicates/overlaps
-        pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZ>);
-        pcl::VoxelGrid<pcl::PointXYZ> sor;
-        sor.setInputCloud(cloud_shell);
-        sor.setLeafSize(voxel_size_ / upsample_N_, voxel_size_ / upsample_N_, voxel_size_ / upsample_N_);
-        sor.filter(*cloud_filtered);
-
         sensor_msgs::msg::PointCloud2 output;
-        pcl::toROSMsg(*cloud_filtered, output);
+        pcl::toROSMsg(*cloud_shell, output);
         output.header = msg->header;
         pub_->publish(output);
         last_msg_ = output;
