@@ -146,6 +146,18 @@ private:
 
     void callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
     {
+        // Only process if the new point cloud has more points than the last one
+        size_t current_count = msg->width * msg->height;
+        if (current_count <= last_point_count_) {
+            if (!last_msg_.data.empty()) {
+                pub_->publish(last_msg_);
+            }
+            return;
+        }
+        // Write that we are processing as information
+        RCLCPP_INFO(this->get_logger(), "Processing point cloud with %zu points", current_count);
+        last_point_count_ = current_count;
+
         // 1. Voxelize input at voxel_size_
         std::map<std::tuple<int,int,int>, int> voxel_map;
         sensor_msgs::PointCloud2ConstIterator<float> iter_x(*msg, "x");
