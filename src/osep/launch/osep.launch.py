@@ -20,6 +20,18 @@ TOPIC_NAMES = {
 def generate_launch_description():
     return LaunchDescription([
         Node(
+            package='osep',
+            executable='tsdf_to_pointcloud_node',
+            name='tsdf_to_pointcloud_node',
+            parameters=[{
+                'output_topic': 'osep/tsdf/pointcloud',
+                'static_output_topic': 'osep/tsdf/static_pointcloud',
+                'cavity_fill_diameter': 5.0,
+                'voxel_size': VOXEL_SIZE
+            }],
+            output='screen'
+        ),
+        Node(
             package='osep_simulation_environment',
             executable='px4_msg_converter_node',
             name='px4_msg_converter_node',

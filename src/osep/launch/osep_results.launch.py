@@ -29,7 +29,7 @@ def generate_launch_description():
                 'input_topic': 'osep/tsdf/static_pointcloud',
                 'output_topic': 'osep/tsdf/upsampled_static_pointcloud',
                 'voxel_size': VOXEL_SIZE,
-                'upsample_N': 4
+                'upsample_N': 1,
             }],
         ),
     ])
