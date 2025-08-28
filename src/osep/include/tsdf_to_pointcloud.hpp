@@ -28,7 +28,7 @@ public:
   TsdfToPointCloudNode();
 
 private:
-  float cavity_fill_max_radius_;
+  float cavity_fill_diameter_;
   float voxel_size_;
   std::unordered_map<int, size_t> white_points_count_;
 

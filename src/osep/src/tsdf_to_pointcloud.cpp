@@ -22,11 +22,11 @@ TsdfToPointCloudNode::TsdfToPointCloudNode()
 {
   this->declare_parameter<std::string>("output_topic", "osep/tsdf_pointcloud");
   this->declare_parameter<std::string>("static_output_topic", "osep/static_tsdf_pointcloud");
-  this->declare_parameter<float>("cavity_fill_max_radius", 5.0);
+  this->declare_parameter<float>("cavity_fill_diameter", 5.0);
   this->declare_parameter<float>("voxel_size", 1.0);
   std::string output_topic = this->get_parameter("output_topic").as_string();
   std::string static_output_topic = this->get_parameter("static_output_topic").as_string();
-  cavity_fill_max_radius_ = this->get_parameter("cavity_fill_max_radius").as_double();
+  cavity_fill_diameter_ = this->get_parameter("cavity_fill_diameter").as_double();
   voxel_size_ = this->get_parameter("voxel_size").as_double();
 
   sub_ = this->create_subscription<nvblox_msgs::msg::VoxelBlockLayer>(
@@ -245,7 +245,7 @@ void TsdfToPointCloudNode::callback(const nvblox_msgs::msg::VoxelBlockLayer::Sha
   // 2. Update static accumulation
   update_static_accumulation(current_points);
 
-  morphological_closing_xy(voxel_size_, cavity_fill_max_radius_);
+  morphological_closing_xy(voxel_size_, std::floor(cavity_fill_diameter_ / (2 * voxel_size_)));
 
   // 3. Create and publish static (white) pointcloud
   auto static_msg = create_static_pointcloud(msg->header);
