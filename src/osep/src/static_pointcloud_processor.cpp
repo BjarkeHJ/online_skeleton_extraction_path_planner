@@ -101,9 +101,17 @@ private:
     {
         std::set<std::tuple<int,int,int>> result;
         std::set<std::tuple<int,int,int>> visited;
-        const int dx[6] = {1, -1, 0, 0, 0, 0};
-        const int dy[6] = {0, 0, 1, -1, 0, 0};
-        const int dz[6] = {0, 0, 0, 0, 1, -1};
+
+        // Generate all 26 neighbor offsets (excluding 0,0,0)
+        std::vector<std::tuple<int,int,int>> neighbors;
+        for (int dx = -1; dx <= 1; ++dx) {
+            for (int dy = -1; dy <= 1; ++dy) {
+                for (int dz = -1; dz <= 1; ++dz) {
+                    if (dx == 0 && dy == 0 && dz == 0) continue;
+                    neighbors.emplace_back(dx, dy, dz);
+                }
+            }
+        }
 
         for (const auto& voxel : occupied_voxels) {
             if (visited.count(voxel)) continue;
@@ -118,11 +126,14 @@ private:
                 int ix = std::get<0>(v);
                 int iy = std::get<1>(v);
                 int iz = std::get<2>(v);
-                for (int d = 0; d < 6; ++d) {
-                    auto n = std::make_tuple(ix + dx[d], iy + dy[d], iz + dz[d]);
-                    if (occupied_voxels.count(n) && !visited.count(n)) {
-                        visited.insert(n);
-                        queue.push_back(n);
+                for (const auto& n : neighbors) {
+                    int nx = ix + std::get<0>(n);
+                    int ny = iy + std::get<1>(n);
+                    int nz = iz + std::get<2>(n);
+                    auto nidx = std::make_tuple(nx, ny, nz);
+                    if (occupied_voxels.count(nidx) && !visited.count(nidx)) {
+                        visited.insert(nidx);
+                        queue.push_back(nidx);
                     }
                 }
             }
