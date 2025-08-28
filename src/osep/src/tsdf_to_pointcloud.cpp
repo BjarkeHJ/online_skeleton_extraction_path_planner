@@ -103,101 +103,143 @@ void TsdfToPointCloudNode::update_static_accumulation(
 
 void TsdfToPointCloudNode::fill_cavities_xy(float voxel_res, float max_radius)
 {
-  // 1. Build 2D occupancy grid (x, y) -> set of z
-  std::unordered_map<std::pair<int, int>, std::set<int>, boost::hash<std::pair<int, int>>> xy_occupied;
+  // 1. Build 2D occupancy grids for each z-slice and determine z-bounds
+  std::unordered_map<int, std::set<std::pair<int, int>>> slice_occupied;
+  int min_z = INT_MAX, max_z = INT_MIN;
+
+  if (accumulated_points_.empty()) {
+      RCLCPP_INFO(this->get_logger(), "No accumulated points to process.");
+      return;
+  }
+
   for (const auto& kv : accumulated_points_) {
     auto [qx, qy, qz] = kv.first;
-    xy_occupied[{qx, qy}].insert(qz);
+    slice_occupied[qz].insert({qx, qy});
+    min_z = std::min(min_z, qz);
+    max_z = std::max(max_z, qz);
   }
 
-  // 2. Find bounds
-  int min_x = INT_MAX, max_x = INT_MIN, min_y = INT_MAX, max_y = INT_MIN;
-  for (const auto& kv : xy_occupied) {
-    min_x = std::min(min_x, kv.first.first);
-    max_x = std::max(max_x, kv.first.first);
-    min_y = std::min(min_y, kv.first.second);
-    max_y = std::max(max_y, kv.first.second);
-  }
+  size_t points_added = 0;
+  size_t total_cavities_found = 0;
 
-  // 3. Flood fill empty regions
-  std::set<std::pair<int, int>> visited;
-  auto is_occupied = [&](int x, int y) {
-    return xy_occupied.count({x, y}) > 0;
-  };
+  // Iterate over all relevant z-slices
+  for (int qz = min_z; qz <= max_z; ++qz) {
+    RCLCPP_INFO(this->get_logger(), "Processing z-slice %d.", qz);
+    const auto& occupied_xy = slice_occupied.count(qz) ? slice_occupied.at(qz) : std::set<std::pair<int, int>>{};
 
-  std::vector<std::vector<std::pair<int, int>>> cavities;
-  for (int x = min_x; x <= max_x; ++x) {
-    for (int y = min_y; y <= max_y; ++y) {
-      std::pair<int, int> p = {x, y};
-      if (is_occupied(x, y) || visited.count(p)) continue;
-
-      // Start BFS
-      std::queue<std::pair<int, int>> q;
-      std::vector<std::pair<int, int>> region;
-      bool touches_border = false;
-      q.push(p);
-      visited.insert(p);
-
-      while (!q.empty()) {
-        auto [cx, cy] = q.front(); q.pop();
-        region.push_back({cx, cy});
-        if (cx == min_x || cx == max_x || cy == min_y || cy == max_y)
-          touches_border = true;
-
-        for (auto [dx, dy] : std::vector<std::pair<int, int>>{{1,0},{-1,0},{0,1},{0,-1}}) {
-          int nx = cx + dx, ny = cy + dy;
-          std::pair<int, int> np = {nx, ny};
-          if (nx < min_x || nx > max_x || ny < min_y || ny > max_y) continue;
-          if (is_occupied(nx, ny) || visited.count(np)) continue;
-          visited.insert(np);
-          q.push(np);
+    // 2. Perform multiple morphological dilation passes to close gaps
+    std::set<std::pair<int, int>> dilated_occupied = occupied_xy;
+    const int dilation_passes = 2; // Dilate 2 times to close wider gaps
+    for (int i = 0; i < dilation_passes; ++i) {
+      std::set<std::pair<int, int>> temp_dilated = dilated_occupied;
+      for (const auto& p : dilated_occupied) {
+        int x = p.first;
+        int y = p.second;
+        for (int dx = -1; dx <= 1; ++dx) {
+          for (int dy = -1; dy <= 1; ++dy) {
+            if (dx == 0 && dy == 0) continue;
+            temp_dilated.insert({x + dx, y + dy});
+          }
         }
       }
-      if (!touches_border) cavities.push_back(region);
+      dilated_occupied = temp_dilated;
     }
-  }
 
-  // 4. Fill cavities if within radius
-  size_t points_added = 0; // Track how many points we add
-  for (const auto& region : cavities) {
-    // Compute centroid
-    float cx = 0, cy = 0;
-    for (const auto& p : region) { cx += p.first; cy += p.second; }
-    cx /= region.size(); cy /= region.size();
-
-    // Compute average distance from centroid
-    float sum_dist = 0;
-    for (const auto& p : region) {
-      float dist = std::hypot(p.first - cx, p.second - cy) * voxel_res;
-      sum_dist += dist;
+    if (dilated_occupied.empty()) {
+        continue;
     }
-    float avg_dist = sum_dist / region.size();
-    RCLCPP_INFO(this->get_logger(), "Cavity average distance: %.3f", avg_dist);
 
-    if (avg_dist > max_radius) continue;
+    // 3. Find bounds for this z-slice using the dilated grid
+    int min_x = INT_MAX, max_x = INT_MIN, min_y = INT_MAX, max_y = INT_MIN;
+    for (const auto& xy : dilated_occupied) {
+      min_x = std::min(min_x, xy.first);
+      max_x = std::max(max_x, xy.first);
+      min_y = std::min(min_y, xy.second);
+      max_y = std::max(max_y, xy.second);
+    }
+    min_x -= 1; max_x += 1; min_y -= 1; max_y += 1;
 
-    // Fill: for each (x, y), add a point at the mean z of neighbors
-    for (const auto& p : region) {
-      std::vector<int> neighbor_z;
-      for (auto [dx, dy] : std::vector<std::pair<int, int>>{{1,0},{-1,0},{0,1},{0,-1}}) {
-        auto it = xy_occupied.find({p.first + dx, p.second + dy});
-        if (it != xy_occupied.end()) {
-          neighbor_z.insert(neighbor_z.end(), it->second.begin(), it->second.end());
+    // 4. Flood fill empty regions to find cavities
+    std::set<std::pair<int, int>> visited;
+    
+    auto is_occupied = [&](int x, int y) {
+      return dilated_occupied.count({x, y}) > 0;
+    };
+
+    std::vector<std::vector<std::pair<int, int>>> cavities;
+    for (int x = min_x; x <= max_x; ++x) {
+      for (int y = min_y; y <= max_y; ++y) {
+        std::pair<int, int> p = {x, y};
+        if (visited.count(p) || is_occupied(x, y)) {
+          continue;
+        }
+
+        std::queue<std::pair<int, int>> q;
+        std::vector<std::pair<int, int>> region;
+        bool touches_object_boundary = false;
+        
+        q.push(p);
+        visited.insert(p);
+
+        while (!q.empty()) {
+          auto [cx, cy] = q.front();
+          q.pop();
+          region.push_back({cx, cy});
+
+          for (auto [dx, dy] : std::vector<std::pair<int, int>>{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}) {
+            int nx = cx + dx, ny = cy + dy;
+            std::pair<int, int> np = {nx, ny};
+            if (is_occupied(nx, ny)) {
+              touches_object_boundary = true;
+            }
+            if (nx < min_x || nx > max_x || ny < min_y || ny > max_y || visited.count(np) || is_occupied(nx, ny)) {
+              continue;
+            }
+            visited.insert(np);
+            q.push(np);
+          }
+        }
+        if (!touches_object_boundary) {
+          cavities.push_back(region);
         }
       }
-      if (neighbor_z.empty()) continue;
-      float mean_z = std::accumulate(neighbor_z.begin(), neighbor_z.end(), 0.0f) / neighbor_z.size();
-      auto key = std::make_tuple(p.first, p.second, static_cast<int>(std::round(mean_z)));
-      if (accumulated_points_.count(key) == 0) {
-        float fx = p.first * voxel_res;
-        float fy = p.second * voxel_res;
-        float fz = mean_z * voxel_res;
-        accumulated_points_[key] = ColoredPoint{fx, fy, fz, 0, 0, 0};
-        ++points_added;
+    }
+
+    if (cavities.size() > 0) {
+      RCLCPP_INFO(this->get_logger(), "Found %zu cavities in z-slice %d.", cavities.size(), qz);
+    }
+    total_cavities_found += cavities.size();
+
+    // 5. Fill cavities in this z-slice if within radius
+    for (const auto& region : cavities) {
+      float cx = 0, cy = 0;
+      for (const auto& p : region) { cx += p.first; cy += p.second; }
+      cx /= region.size(); cy /= region.size();
+      float sum_dist = 0;
+      for (const auto& p : region) {
+        float dist = std::hypot(p.first - cx, p.second - cy) * voxel_res;
+        sum_dist += dist;
+      }
+      float avg_dist = sum_dist / region.size();
+      RCLCPP_INFO(this->get_logger(), "Cavity average distance (z=%d): %.3f", qz, avg_dist);
+      if (avg_dist > max_radius) continue;
+
+      for (const auto& p : region) {
+        auto key = std::make_tuple(p.first, p.second, qz);
+        if (accumulated_points_.count(key) == 0) {
+          float fx = p.first * voxel_res;
+          float fy = p.second * voxel_res;
+          float fz = qz * voxel_res;
+          accumulated_points_[key] = ColoredPoint{fx, fy, fz, 0, 0, 0};
+          ++points_added;
+        }
       }
     }
   }
 
+  if (total_cavities_found > 0) {
+    RCLCPP_INFO(this->get_logger(), "Total cavities found: %zu", total_cavities_found);
+  }
   if (points_added > 0) {
     RCLCPP_INFO(this->get_logger(), "Cavity filling: added %zu points", points_added);
   }
