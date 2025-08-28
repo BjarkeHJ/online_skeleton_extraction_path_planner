@@ -10,7 +10,8 @@ def generate_launch_description():
             parameters=[{
                 'output_topic': 'osep/tsdf/pointcloud',
                 'static_output_topic': 'osep/tsdf/static_pointcloud',
-                'cavity_fill_max_radius': 5.0
+                'cavity_fill_max_radius': 5.0,
+                'voxel_size': 1.0
             }],
             output='screen'
         ),

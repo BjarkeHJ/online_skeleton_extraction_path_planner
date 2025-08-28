@@ -68,13 +68,13 @@ sensor_msgs::msg::PointCloud2 TsdfToPointCloudNode::create_colored_pointcloud(
       *iter_y = y;
       *iter_z = z;
 
-      uint8_t r = 255, g = 255, b = 255;
-      if (!block.colors.empty()) {
-        const auto & color = block.colors[i];
-        r = static_cast<uint8_t>(color.r * 255.0f);
-        g = static_cast<uint8_t>(color.g * 255.0f);
-        b = static_cast<uint8_t>(color.b * 255.0f);
-      }
+      uint8_t r = 255, g = 255, b = 255; // Always white for original points
+      // if (!block.colors.empty()) {
+      //   const auto & color = block.colors[i];
+      //   r = static_cast<uint8_t>(color.r * 255.0f);
+      //   g = static_cast<uint8_t>(color.g * 255.0f);
+      //   b = static_cast<uint8_t>(color.b * 255.0f);
+      // }
       uint32_t rgb = (r << 16) | (g << 8) | b;
       float rgb_float;
       std::memcpy(&rgb_float, &rgb, sizeof(float));
@@ -160,16 +160,21 @@ void TsdfToPointCloudNode::fill_cavities_xy(float voxel_res, float max_radius)
   // 4. Fill cavities if within radius
   size_t points_added = 0; // Track how many points we add
   for (const auto& region : cavities) {
-    // Compute centroid and max distance
+    // Compute centroid
     float cx = 0, cy = 0;
     for (const auto& p : region) { cx += p.first; cy += p.second; }
     cx /= region.size(); cy /= region.size();
-    float max_dist = 0;
+
+    // Compute average distance from centroid
+    float sum_dist = 0;
     for (const auto& p : region) {
       float dist = std::hypot(p.first - cx, p.second - cy) * voxel_res;
-      max_dist = std::max(max_dist, dist);
+      sum_dist += dist;
     }
-    if (max_dist > max_radius) continue;
+    float avg_dist = sum_dist / region.size();
+    RCLCPP_INFO(this->get_logger(), "Cavity average distance: %.3f", avg_dist);
+
+    if (avg_dist > max_radius) continue;
 
     // Fill: for each (x, y), add a point at the mean z of neighbors
     for (const auto& p : region) {
