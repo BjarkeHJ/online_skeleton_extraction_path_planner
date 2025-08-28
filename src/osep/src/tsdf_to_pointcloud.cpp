@@ -108,99 +108,112 @@ void TsdfToPointCloudNode::update_static_accumulation(
   }
 }
 
-void TsdfToPointCloudNode::morphological_closing_xy(float voxel_res, int kernel_radius)
+void TsdfToPointCloudNode::morphological_closing_3d(float voxel_res, int kernel_radius)
 {
-  // 1. Group white points by z-index (quantized indices)
-  std::unordered_map<int, std::set<std::pair<int, int>>> white_points;
-  for (const auto& kv : accumulated_points_) {
-    if (kv.second.r == 255 && kv.second.g == 255 && kv.second.b == 255) {
-      int x = std::get<0>(kv.first); // quantized
-      int y = std::get<1>(kv.first); // quantized
-      int z = std::get<2>(kv.first); // quantized
-      white_points[z].insert({x, y});
+    // 1. Collect all white points (quantized indices)
+    std::set<std::tuple<int, int, int>> white_points;
+    int min_x = INT_MAX, max_x = INT_MIN, min_y = INT_MAX, max_y = INT_MIN, min_z = INT_MAX, max_z = INT_MIN;
+    for (const auto& kv : accumulated_points_) {
+        if (kv.second.r == 255 && kv.second.g == 255 && kv.second.b == 255) {
+            int x = std::get<0>(kv.first);
+            int y = std::get<1>(kv.first);
+            int z = std::get<2>(kv.first);
+            white_points.insert({x, y, z});
+            min_x = std::min(min_x, x);
+            max_x = std::max(max_x, x);
+            min_y = std::min(min_y, y);
+            max_y = std::max(max_y, y);
+            min_z = std::min(min_z, z);
+            max_z = std::max(max_z, z);
+        }
     }
-  }
+    if (white_points.empty()) return;
 
-  for (const auto& [z, points] : white_points) {
-    if (white_points_count_[z] == 0) continue; // Skip if no new white points
-    white_points_count_[z] = 0;
-    // Find bounds
-    int min_x = INT_MAX, max_x = INT_MIN, min_y = INT_MAX, max_y = INT_MIN;
-    for (const auto& p : points) {
-      min_x = std::min(min_x, p.first);
-      max_x = std::max(max_x, p.first);
-      min_y = std::min(min_y, p.second);
-      max_y = std::max(max_y, p.second);
-    }
     min_x -= kernel_radius; max_x += kernel_radius;
     min_y -= kernel_radius; max_y += kernel_radius;
+    min_z -= kernel_radius; max_z += kernel_radius;
     int size_x = max_x - min_x + 1;
     int size_y = max_y - min_y + 1;
+    int size_z = max_z - min_z + 1;
 
-    // Build binary grid
-    std::vector<std::vector<uint8_t>> grid(size_x, std::vector<uint8_t>(size_y, 0));
-    for (const auto& p : points) {
-      grid[p.first - min_x][p.second - min_y] = 1;
+    // 2. Build binary 3D grid
+    std::vector<std::vector<std::vector<uint8_t>>> grid(size_x,
+        std::vector<std::vector<uint8_t>>(size_y, std::vector<uint8_t>(size_z, 0)));
+    for (const auto& p : white_points) {
+        int x = std::get<0>(p) - min_x;
+        int y = std::get<1>(p) - min_y;
+        int z = std::get<2>(p) - min_z;
+        grid[x][y][z] = 1;
     }
 
-    // Dilation
-    std::vector<std::vector<uint8_t>> dilated = grid;
-    for (int i = 0; i < size_x; ++i) {
-      for (int j = 0; j < size_y; ++j) {
-        if (grid[i][j]) {
-          for (int dx = -kernel_radius; dx <= kernel_radius; ++dx) {
-            for (int dy = -kernel_radius; dy <= kernel_radius; ++dy) {
-              int ni = i + dx, nj = j + dy;
-              if (ni >= 0 && ni < size_x && nj >= 0 && nj < size_y) {
-                dilated[ni][nj] = 1;
-              }
+    // 3. Dilation
+    std::vector<std::vector<std::vector<uint8_t>>> dilated = grid;
+    for (int x = 0; x < size_x; ++x) {
+        for (int y = 0; y < size_y; ++y) {
+            for (int z = 0; z < size_z; ++z) {
+                if (grid[x][y][z]) {
+                    for (int dx = -kernel_radius; dx <= kernel_radius; ++dx) {
+                        for (int dy = -kernel_radius; dy <= kernel_radius; ++dy) {
+                            for (int dz = -kernel_radius; dz <= kernel_radius; ++dz) {
+                                int nx = x + dx, ny = y + dy, nz = z + dz;
+                                if (nx >= 0 && nx < size_x && ny >= 0 && ny < size_y && nz >= 0 && nz < size_z) {
+                                    dilated[nx][ny][nz] = 1;
+                                }
+                            }
+                        }
+                    }
+                }
             }
-          }
         }
-      }
     }
 
-    // Erosion
-    std::vector<std::vector<uint8_t>> closed(size_x, std::vector<uint8_t>(size_y, 1));
-    for (int i = 0; i < size_x; ++i) {
-      for (int j = 0; j < size_y; ++j) {
-        bool erode = false;
-        for (int dx = -kernel_radius; dx <= kernel_radius && !erode; ++dx) {
-          for (int dy = -kernel_radius; dy <= kernel_radius && !erode; ++dy) {
-            int ni = i + dx, nj = j + dy;
-            if (ni < 0 || ni >= size_x || nj < 0 || nj >= size_y || dilated[ni][nj] == 0) {
-              erode = true;
+    // 4. Erosion
+    std::vector<std::vector<std::vector<uint8_t>>> closed(size_x,
+        std::vector<std::vector<uint8_t>>(size_y, std::vector<uint8_t>(size_z, 1)));
+    for (int x = 0; x < size_x; ++x) {
+        for (int y = 0; y < size_y; ++y) {
+            for (int z = 0; z < size_z; ++z) {
+                bool erode = false;
+                for (int dx = -kernel_radius; dx <= kernel_radius && !erode; ++dx) {
+                    for (int dy = -kernel_radius; dy <= kernel_radius && !erode; ++dy) {
+                        for (int dz = -kernel_radius; dz <= kernel_radius && !erode; ++dz) {
+                            int nx = x + dx, ny = y + dy, nz = z + dz;
+                            if (nx < 0 || nx >= size_x || ny < 0 || ny >= size_y || nz < 0 || nz >= size_z || dilated[nx][ny][nz] == 0) {
+                                erode = true;
+                            }
+                        }
+                    }
+                }
+                closed[x][y][z] = erode ? 0 : 1;
             }
-          }
         }
-        closed[i][j] = erode ? 0 : 1;
-      }
     }
 
-    // Add new black points (those that are 1 in closed but not in original)
+    // 5. Add new black points (those that are 1 in closed but not in original)
     size_t black_added = 0;
-    for (int i = 0; i < size_x; ++i) {
-      for (int j = 0; j < size_y; ++j) {
-        if (closed[i][j] && !grid[i][j]) {
-          int x = min_x + i; // quantized
-          int y = min_y + j; // quantized
-          auto key = std::make_tuple(x, y, z);
-          if (accumulated_points_.count(key) == 0) {
-            float fx = (x + 0.5f) * voxel_res;
-            float fy = (y + 0.5f) * voxel_res;
-            float fz = (z + 0.5f) * voxel_res;
-            accumulated_points_[key] = ColoredPoint{fx, fy, fz, 0, 0, 0};
-            ++black_added;
-          }
+    for (int x = 0; x < size_x; ++x) {
+        for (int y = 0; y < size_y; ++y) {
+            for (int z = 0; z < size_z; ++z) {
+                if (closed[x][y][z] && !grid[x][y][z]) {
+                    int gx = min_x + x;
+                    int gy = min_y + y;
+                    int gz = min_z + z;
+                    auto key = std::make_tuple(gx, gy, gz);
+                    if (accumulated_points_.count(key) == 0) {
+                        float fx = (gx + 0.5f) * voxel_res;
+                        float fy = (gy + 0.5f) * voxel_res;
+                        float fz = (gz + 0.5f) * voxel_res;
+                        accumulated_points_[key] = ColoredPoint{fx, fy, fz, 0, 0, 0};
+                        ++black_added;
+                    }
+                }
+            }
         }
-      }
     }
     if (black_added > 0) {
-      RCLCPP_INFO(this->get_logger(), "Morphological closing (z=%d): added %zu black points", z, black_added);
+        RCLCPP_INFO(this->get_logger(), "3D Morphological closing: added %zu black points", black_added);
     }
-  }
 }
-
 
 sensor_msgs::msg::PointCloud2 TsdfToPointCloudNode::create_static_pointcloud(const std_msgs::msg::Header& header)
 {
@@ -245,7 +258,18 @@ void TsdfToPointCloudNode::callback(const nvblox_msgs::msg::VoxelBlockLayer::Sha
   // 2. Update static accumulation
   update_static_accumulation(current_points);
 
-  morphological_closing_xy(voxel_size_, std::floor(cavity_fill_diameter_ / (2 * voxel_size_)));
+  // 3. Only run morph if number of white points increased
+  size_t current_white_points = 0;
+  for (const auto& kv : accumulated_points_) {
+      if (kv.second.r == 255 && kv.second.g == 255 && kv.second.b == 255) {
+          ++current_white_points;
+      }
+  }
+  static size_t last_white_point_count_ = 0;
+  if (current_white_points > last_white_point_count_) {
+      morphological_closing_3d(voxel_size_, std::floor(cavity_fill_diameter_ / (2 * voxel_size_)));
+      last_white_point_count_ = current_white_points;
+  }
 
   // 3. Create and publish static (white) pointcloud
   auto static_msg = create_static_pointcloud(msg->header);

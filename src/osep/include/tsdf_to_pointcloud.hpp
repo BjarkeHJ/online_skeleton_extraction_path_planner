@@ -30,6 +30,7 @@ public:
 private:
   float cavity_fill_diameter_;
   float voxel_size_;
+  size_t last_white_point_count_ = 0;
   std::unordered_map<int, size_t> white_points_count_;
 
   void callback(const nvblox_msgs::msg::VoxelBlockLayer::SharedPtr msg);
@@ -44,7 +45,7 @@ private:
 
   sensor_msgs::msg::PointCloud2 create_static_pointcloud(const std_msgs::msg::Header& header);
 
-  void morphological_closing_xy(float voxel_res, int kernel_radius);
+  void morphological_closing_3d(float voxel_res, int kernel_radius);
 
   rclcpp::Subscription<nvblox_msgs::msg::VoxelBlockLayer>::SharedPtr sub_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_;
