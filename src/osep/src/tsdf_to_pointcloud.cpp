@@ -9,11 +9,11 @@
 #include <set>
 
 namespace {
-inline std::tuple<int, int, int> quantize(float x, float y, float z, float res = 0.01f) {
+inline std::tuple<int, int, int> quantize(float x, float y, float z, float res = 1.0f) {
   return std::make_tuple(
-    static_cast<int>(std::round(x / res)),
-    static_cast<int>(std::round(y / res)),
-    static_cast<int>(std::round(z / res)));
+    static_cast<int>(std::floor(x / res)),
+    static_cast<int>(std::floor(y / res)),
+    static_cast<int>(std::floor(z / res)));
 }
 }
 
@@ -177,9 +177,9 @@ void TsdfToPointCloudNode::morphological_closing_xy(float voxel_res, int kernel_
           int y = min_y + j; // quantized
           auto key = std::make_tuple(x, y, z);
           if (accumulated_points_.count(key) == 0) {
-            float fx = x * voxel_res;
-            float fy = y * voxel_res;
-            float fz = z * voxel_res;
+            float fx = (x + 0.5f) * voxel_res;
+            float fy = (y + 0.5f) * voxel_res;
+            float fz = (z + 0.5f) * voxel_res;
             accumulated_points_[key] = ColoredPoint{fx, fy, fz, 0, 0, 0};
             ++black_added;
           }

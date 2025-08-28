@@ -405,9 +405,9 @@ Visualization Manager:
       Channel Name: intensity
       Class: rviz_default_plugins/PointCloud2
       Color: 255; 255; 255
-      Color Transformer: Intensity
+      Color Transformer: RGB8
       Decay Time: 0
-      Enabled: false
+      Enabled: true
       Invert Rainbow: false
       Max Color: 255; 255; 255
       Max Intensity: 4096
@@ -428,7 +428,7 @@ Visualization Manager:
         Value: /osep/tsdf/static_pointcloud
       Use Fixed Frame: true
       Use rainbow: true
-      Value: false
+      Value: true
     - Alpha: 1
       Autocompute Intensity Bounds: true
       Autocompute Value Bounds:
@@ -441,7 +441,7 @@ Visualization Manager:
       Color: 255; 255; 255
       Color Transformer: Intensity
       Decay Time: 0
-      Enabled: true
+      Enabled: false
       Invert Rainbow: false
       Max Color: 255; 255; 255
       Max Intensity: 4096
@@ -462,7 +462,7 @@ Visualization Manager:
         Value: /osep/tsdf/upsampled_static_pointcloud
       Use Fixed Frame: true
       Use rainbow: true
-      Value: true
+      Value: false
   Enabled: true
   Global Options:
     Background Color: 212; 212; 212
@@ -509,25 +509,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 488.05523681640625
+      Distance: 188.21336364746094
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 157.7413330078125
-        Y: -162.86264038085938
-        Z: -18.285717010498047
+        X: -6.562573432922363
+        Y: -131.49610900878906
+        Z: -101.83390045166016
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.6997971534729004
+      Pitch: 0.6447972059249878
       Target Frame: camera_link
       Value: Orbit (rviz)
-      Yaw: 1.7704126834869385
+      Yaw: 1.5204129219055176
     Saved: ~
 Window Geometry:
   Color Image:
