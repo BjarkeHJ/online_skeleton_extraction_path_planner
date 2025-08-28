@@ -88,5 +88,5 @@ def generate_launch_description() -> LaunchDescription:
                 "camera": NvbloxCamera.isaac_sim,
             },
         )
-    )    
+    )
     return LaunchDescription(actions)

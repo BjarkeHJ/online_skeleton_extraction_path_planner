@@ -6,7 +6,6 @@ FRAME_ID = "base_link"
 SAFETY_DISTANCE = 10.0
 INTERPOLATION_DISTANCE = 3.0
 INSPECTION_SPEED = 2.5
-VOXEL_SIZE = 1.0
 
 TOPIC_NAMES = {
     "VEL_CMD": '/osep/vel_cmd',
@@ -20,47 +19,12 @@ TOPIC_NAMES = {
 def generate_launch_description():
     return LaunchDescription([
         Node(
-            package='osep',
-            executable='tsdf_to_pointcloud_node',
-            name='tsdf_to_pointcloud_node',
-            output='screen',    
-            parameters=[{
-                'output_topic': 'osep/tsdf/pointcloud',
-                'static_output_topic': 'osep/tsdf/static_pointcloud',
-                'cavity_fill_diameter': 5.0,
-                'voxel_size': VOXEL_SIZE
-            }],
-        ),
-        Node(
-            package='osep_simulation_environment',
-            executable='px4_msg_converter_node',
-            name='px4_msg_converter_node',
-            parameters=[{
-                'osep_vel_cmd': TOPIC_NAMES["VEL_CMD"]
-            }]
-        ),
-        Node(
-            package='osep_simulation_environment',
-            executable='px4_vel_controller',
-            name='px4_vel_controller',
-            parameters=[{
-                'path_topic': TOPIC_NAMES["PATH"],
-                'osep_vel_cmd': TOPIC_NAMES["VEL_CMD"],
-                'interpolation_distance': INTERPOLATION_DISTANCE,
-                'max_speed': 15.0,
-                'inspection_speed': INSPECTION_SPEED,
-                'max_yaw_to_velocity_angle_deg': 120.0,
-                'frequency': 50,
-                'sharp_turn_thresh_deg': 30.0,
-            }]
-        ),
-        Node(
             package="osep_2d_map",
             executable="costmap_2d_node",
             name="costmap_2d_node",
             output="screen",
             parameters=[
-                {"resolution": VOXEL_SIZE},
+                {"resolution": 1.0},
                 {"free_center_radius": 5.0},
                 {"local_map_size": 400.0},
                 {"global_map_size": 1600.0},
