@@ -30,6 +30,7 @@ public:
 private:
   float cavity_fill_max_radius_;
   float voxel_size_;
+  std::unordered_map<int, size_t> white_points_count_;
 
   void callback(const nvblox_msgs::msg::VoxelBlockLayer::SharedPtr msg);
 

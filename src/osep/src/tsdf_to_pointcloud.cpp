@@ -96,12 +96,14 @@ void TsdfToPointCloudNode::update_static_accumulation(
     const std::unordered_map<std::tuple<int, int, int>, ColoredPoint>& current_points)
 {
   for (const auto & kv : current_points) {
-    // If the point exists and is black, overwrite it with the new (white) point
     auto it = accumulated_points_.find(kv.first);
     if (it != accumulated_points_.end() && it->second.r == 0 && it->second.g == 0 && it->second.b == 0) {
       it->second = kv.second;
-    } else {
-      accumulated_points_.emplace(kv.first, kv.second);
+      int z = std::get<2>(kv.first);
+      white_points_count_[z]++;
+    } else if (accumulated_points_.emplace(kv.first, kv.second).second) {
+      int z = std::get<2>(kv.first);
+      white_points_count_[z]++;
     }
   }
 }
@@ -120,6 +122,8 @@ void TsdfToPointCloudNode::morphological_closing_xy(float voxel_res, int kernel_
   }
 
   for (const auto& [z, points] : white_points) {
+    if (white_points_count_[z] == 0) continue; // Skip if no new white points
+    white_points_count_[z] = 0;
     // Find bounds
     int min_x = INT_MAX, max_x = INT_MIN, min_y = INT_MAX, max_y = INT_MIN;
     for (const auto& p : points) {
