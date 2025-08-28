@@ -19,7 +19,7 @@ public:
     : Node("static_pointcloud_postprocess_node")
     {
         this->declare_parameter<std::string>("static_input_topic", "osep/tsdf/static_pointcloud");
-        this->declare_parameter<std::string>("output_topic", "osep/tsdf/upsampled_static_pointcloud");
+        this->declare_parameter<std::string>("output_topic", "osep/tsdf/shell_static_pointcloud");
         this->declare_parameter<double>("voxel_size", 1.0);  // 1.0 m by default
         this->declare_parameter<int>("upsample_N", 4);       // Default upsampling factor
 

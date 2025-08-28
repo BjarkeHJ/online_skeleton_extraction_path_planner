@@ -13,7 +13,9 @@ Panels:
         - /Navigation1
         - /Map1
         - /PointCloud21
+        - /PointCloud21/Status1
         - /PointCloud22
+        - /PointCloud22/Status1
       Splitter Ratio: 0.6176470518112183
     Tree Height: 1180
   - Class: rviz_common/Selection
@@ -170,8 +172,8 @@ Visualization Manager:
         - Alpha: 1
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
-            Max Value: 0.44109344482421875
-            Min Value: -0.01171875
+            Max Value: 129.48968505859375
+            Min Value: 100.89417266845703
             Value: true
           Axis: Z
           Channel Name: intensity
@@ -459,7 +461,7 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /osep/tsdf/upsampled_static_pointcloud
+        Value: /osep/tsdf/shell_static_pointcloud
       Use Fixed Frame: true
       Use rainbow: true
       Value: true
@@ -509,25 +511,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 302.69769287109375
+      Distance: 379.7039794921875
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 62.81414031982422
-        Y: -131.2389678955078
-        Z: -54.787532806396484
+        X: 131.67160034179688
+        Y: -136.4614715576172
+        Z: -57.518798828125
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.8147969245910645
+      Pitch: 0.7197970151901245
       Target Frame: camera_link
       Value: Orbit (rviz)
-      Yaw: 1.555413007736206
+      Yaw: 1.4604130983352661
     Saved: ~
 Window Geometry:
   Color Image:

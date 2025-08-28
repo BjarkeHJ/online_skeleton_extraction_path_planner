@@ -258,7 +258,7 @@ void TsdfToPointCloudNode::callback(const nvblox_msgs::msg::VoxelBlockLayer::Sha
   // 2. Update static accumulation
   update_static_accumulation(current_points);
 
-  // 3. Only run morph if number of white points increased
+  // 3. Only run morph and publish new static cloud if white points increased
   size_t current_white_points = 0;
   for (const auto& kv : accumulated_points_) {
       if (kv.second.r == 255 && kv.second.g == 255 && kv.second.b == 255) {
@@ -266,14 +266,17 @@ void TsdfToPointCloudNode::callback(const nvblox_msgs::msg::VoxelBlockLayer::Sha
       }
   }
   static size_t last_white_point_count_ = 0;
+  static sensor_msgs::msg::PointCloud2 last_static_msg;
+
   if (current_white_points > last_white_point_count_) {
       morphological_closing_3d(voxel_size_, std::floor(cavity_fill_diameter_ / (2 * voxel_size_)));
       last_white_point_count_ = current_white_points;
+      last_static_msg = create_static_pointcloud(msg->header);
+      static_pub_->publish(last_static_msg);
+  } else if (last_static_msg.data.size() > 0) {
+      // Just re-publish the last static message
+      static_pub_->publish(last_static_msg);
   }
-
-  // 3. Create and publish static (white) pointcloud
-  auto static_msg = create_static_pointcloud(msg->header);
-  static_pub_->publish(static_msg);
 }
 
 int main(int argc, char ** argv)
