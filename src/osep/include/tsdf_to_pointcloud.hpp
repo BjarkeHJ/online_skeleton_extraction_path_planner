@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <tuple>
 #include <string>
+#include <boost/functional/hash.hpp>
 
 struct ColoredPoint {
   float x, y, z;
@@ -27,6 +28,9 @@ public:
   TsdfToPointCloudNode();
 
 private:
+  float cavity_fill_max_radius_;
+  float voxel_size_;
+
   void callback(const nvblox_msgs::msg::VoxelBlockLayer::SharedPtr msg);
 
   sensor_msgs::msg::PointCloud2 create_colored_pointcloud(
@@ -38,6 +42,8 @@ private:
     const std::unordered_map<std::tuple<int, int, int>, ColoredPoint>& current_points);
 
   sensor_msgs::msg::PointCloud2 create_static_pointcloud(const std_msgs::msg::Header& header);
+  
+  void fill_cavities_xy(float voxel_res, float max_radius);
 
   rclcpp::Subscription<nvblox_msgs::msg::VoxelBlockLayer>::SharedPtr sub_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_;

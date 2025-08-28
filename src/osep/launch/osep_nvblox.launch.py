@@ -9,7 +9,8 @@ def generate_launch_description():
             name='tsdf_to_pointcloud_node',
             parameters=[{
                 'output_topic': 'osep/tsdf/pointcloud',
-                'static_output_topic': 'osep/tsdf/static_pointcloud'
+                'static_output_topic': 'osep/tsdf/static_pointcloud',
+                'cavity_fill_max_radius': 5.0
             }],
             output='screen'
         ),
