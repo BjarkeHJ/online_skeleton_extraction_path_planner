@@ -20,8 +20,8 @@ inline std::tuple<int, int, int> quantize(float x, float y, float z, float res =
 TsdfToPointCloudNode::TsdfToPointCloudNode()
 : Node("tsdf_to_pointcloud_node")
 {
-  this->declare_parameter<std::string>("output_topic", "osep/tsdf_pointcloud");
-  this->declare_parameter<std::string>("static_output_topic", "osep/static_tsdf_pointcloud");
+  this->declare_parameter<std::string>("output_topic", "osep/tsdf/pointcloud");
+  this->declare_parameter<std::string>("static_output_topic", "/osep/tsdf/static_pointcloud");
   this->declare_parameter<float>("cavity_fill_diameter", 5.0);
   this->declare_parameter<float>("voxel_size", 1.0);
   std::string output_topic = this->get_parameter("output_topic").as_string();

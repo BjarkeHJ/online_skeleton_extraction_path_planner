@@ -3,10 +3,9 @@
 #include <sensor_msgs/point_cloud2_iterator.hpp>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
-#include <pcl/octree/octree_pointcloud_occupancy.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <vector>
-#include <queue>
+#include <map>
 #include <set>
 #include <Eigen/Core>
 
@@ -19,7 +18,7 @@ public:
         this->declare_parameter<std::string>("static_input_topic", "osep/tsdf/static_pointcloud");
         this->declare_parameter<std::string>("output_topic", "osep/tsdf/upsampled_static_pointcloud");
         this->declare_parameter<double>("voxel_size", 1.0);  // 1.0 m by default
-        this->declare_parameter<int>("upsample_N", 3);       // Default upsampling factor
+        this->declare_parameter<int>("upsample_N", 4);       // Default upsampling factor
 
         static_input_topic_ = this->get_parameter("static_input_topic").as_string();
         output_topic_ = this->get_parameter("output_topic").as_string();
@@ -44,203 +43,130 @@ private:
     size_t last_point_count_ = 0;
     sensor_msgs::msg::PointCloud2 last_msg_;
 
-    // Filtering function: remove points not in a group of at least min_group_size per voxel
-    std::vector<pcl::PointXYZ, Eigen::aligned_allocator<pcl::PointXYZ>>
-    filter_sparse_groups(const sensor_msgs::msg::PointCloud2 &msg, double voxel_size, int min_group_size)
+    // Helper: Upsample a voxel face into a grid of points
+    void upsample_voxel_face(
+        const Eigen::Vector3f& voxel_center,
+        float voxel_size,
+        int upsample_N,
+        int face, // 0:+x, 1:-x, 2:+y, 3:-y, 4:+z, 5:-z
+        std::vector<pcl::PointXYZ, Eigen::aligned_allocator<pcl::PointXYZ>>& out_points)
     {
-        std::map<std::tuple<int, int, int>, std::vector<std::array<float, 3>>> voxel_groups;
-        sensor_msgs::PointCloud2ConstIterator<float> iter_x(msg, "x");
-        sensor_msgs::PointCloud2ConstIterator<float> iter_y(msg, "y");
-        sensor_msgs::PointCloud2ConstIterator<float> iter_z(msg, "z");
-        for (size_t i = 0; i < msg.width * msg.height; ++i, ++iter_x, ++iter_y, ++iter_z) {
-            int ix = static_cast<int>(std::floor(*iter_x / voxel_size));
-            int iy = static_cast<int>(std::floor(*iter_y / voxel_size));
-            int iz = static_cast<int>(std::floor(*iter_z / voxel_size));
-            voxel_groups[{ix, iy, iz}].push_back(std::array<float, 3>{*iter_x, *iter_y, *iter_z});
+        float half = voxel_size / 2.0f;
+        float step = voxel_size / upsample_N;
+        Eigen::Vector3f face_center = voxel_center;
+        Eigen::Vector3f u, v;
+        switch(face) {
+            case 0: face_center.x() += half; u = {0, 1, 0}; v = {0, 0, 1}; break; // +x
+            case 1: face_center.x() -= half; u = {0, 1, 0}; v = {0, 0, 1}; break; // -x
+            case 2: face_center.y() += half; u = {1, 0, 0}; v = {0, 0, 1}; break; // +y
+            case 3: face_center.y() -= half; u = {1, 0, 0}; v = {0, 0, 1}; break; // -y
+            case 4: face_center.z() += half; u = {1, 0, 0}; v = {0, 1, 0}; break; // +z
+            case 5: face_center.z() -= half; u = {1, 0, 0}; v = {0, 1, 0}; break; // -z
         }
-
-        std::vector<pcl::PointXYZ, Eigen::aligned_allocator<pcl::PointXYZ>> filtered_points;
-        for (const auto& kv : voxel_groups) {
-            if (kv.second.size() >= min_group_size) {
-                for (const auto& arr : kv.second) {
-                    filtered_points.emplace_back(arr[0], arr[1], arr[2]);
-                }
+        Eigen::Vector3f origin = face_center - 0.5f * voxel_size * u - 0.5f * voxel_size * v + 0.5f * step * u + 0.5f * step * v;
+        for (int i = 0; i < upsample_N; ++i) {
+            for (int j = 0; j < upsample_N; ++j) {
+                Eigen::Vector3f pt = origin + i * step * u + j * step * v;
+                out_points.emplace_back(pt.x(), pt.y(), pt.z());
             }
         }
-        return filtered_points;
     }
 
-    // Only keep voxels on the true outer shell (not internal cavities)
-    std::vector<pcl::PointXYZ, Eigen::aligned_allocator<pcl::PointXYZ>>
-    keep_outer_surface_voxels(const std::vector<pcl::PointXYZ, Eigen::aligned_allocator<pcl::PointXYZ>>& voxelCenters, double voxel_size)
+    std::set<std::tuple<int,int,int>> filter_sparse_voxel_groups(
+        const std::set<std::tuple<int,int,int>>& occupied_voxels,
+        int min_group_size)
     {
-        // Build set of occupied voxel indices
-        std::set<std::tuple<int, int, int>> occupied_voxels;
-        int min_x = INT_MAX, max_x = INT_MIN;
-        int min_y = INT_MAX, max_y = INT_MIN;
-        int min_z = INT_MAX, max_z = INT_MIN;
-        for (const auto& c : voxelCenters) {
-            int ix = static_cast<int>(std::round(c.x / voxel_size));
-            int iy = static_cast<int>(std::round(c.y / voxel_size));
-            int iz = static_cast<int>(std::round(c.z / voxel_size));
-            occupied_voxels.insert({ix, iy, iz});
-            min_x = std::min(min_x, ix); max_x = std::max(max_x, ix);
-            min_y = std::min(min_y, iy); max_y = std::max(max_y, iy);
-            min_z = std::min(min_z, iz); max_z = std::max(max_z, iz);
-        }
-
-        // Flood fill to find outside air
-        std::set<std::tuple<int, int, int>> outside_air;
-        std::queue<std::tuple<int, int, int>> q;
-        for (int ix = min_x; ix <= max_x; ++ix)
-        for (int iy = min_y; iy <= max_y; ++iy)
-        for (int iz = min_z; iz <= max_z; ++iz) {
-            bool on_boundary = (ix == min_x || ix == max_x ||
-                                iy == min_y || iy == max_y ||
-                                iz == min_z || iz == max_z);
-            auto idx = std::make_tuple(ix, iy, iz);
-            if (on_boundary && occupied_voxels.count(idx) == 0) {
-                q.push(idx);
-                outside_air.insert(idx);
-            }
-        }
+        std::set<std::tuple<int,int,int>> result;
+        std::set<std::tuple<int,int,int>> visited;
         const int dx[6] = {1, -1, 0, 0, 0, 0};
         const int dy[6] = {0, 0, 1, -1, 0, 0};
         const int dz[6] = {0, 0, 0, 0, 1, -1};
-        while (!q.empty()) {
-            auto idx = q.front(); q.pop();
-            int ix = std::get<0>(idx), iy = std::get<1>(idx), iz = std::get<2>(idx);
-            for (int n = 0; n < 6; ++n) {
-                auto nidx = std::make_tuple(ix + dx[n], iy + dy[n], iz + dz[n]);
-                if (ix + dx[n] < min_x || ix + dx[n] > max_x ||
-                    iy + dy[n] < min_y || iy + dy[n] > max_y ||
-                    iz + dz[n] < min_z || iz + dz[n] > max_z)
-                    continue;
-                if (occupied_voxels.count(nidx) == 0 && outside_air.count(nidx) == 0) {
-                    q.push(nidx);
-                    outside_air.insert(nidx);
-                }
-            }
-        }
 
-        // Keep only voxels that have a neighbor in outside_air
-        std::vector<pcl::PointXYZ, Eigen::aligned_allocator<pcl::PointXYZ>> outer_surface_voxels;
-        for (const auto& c : voxelCenters) {
-            int ix = static_cast<int>(std::round(c.x / voxel_size));
-            int iy = static_cast<int>(std::round(c.y / voxel_size));
-            int iz = static_cast<int>(std::round(c.z / voxel_size));
-            for (int n = 0; n < 6; ++n) {
-                auto nidx = std::make_tuple(ix + dx[n], iy + dy[n], iz + dz[n]);
-                if (outside_air.count(nidx)) {
-                    outer_surface_voxels.push_back(c);
-                    break;
-                }
-            }
-        }
-        return outer_surface_voxels;
-    }
-
-    // Upsampling function
-    std::vector<pcl::PointXYZ, Eigen::aligned_allocator<pcl::PointXYZ>>
-    upsample_voxels(const std::vector<pcl::PointXYZ, Eigen::aligned_allocator<pcl::PointXYZ>>& voxelCenters, double voxel_size, int N)
-    {
-        std::vector<pcl::PointXYZ, Eigen::aligned_allocator<pcl::PointXYZ>> upsampled_points;
-        double sub_step = voxel_size / N;
-        for (const auto& center : voxelCenters) {
-            double start_x = center.x - voxel_size / 2.0 + sub_step / 2.0;
-            double start_y = center.y - voxel_size / 2.0 + sub_step / 2.0;
-            double start_z = center.z - voxel_size / 2.0 + sub_step / 2.0;
-            for (int ix = 0; ix < N; ++ix) {
-                for (int iy = 0; iy < N; ++iy) {
-                    for (int iz = 0; iz < N; ++iz) {
-                        pcl::PointXYZ pt;
-                        pt.x = start_x + ix * sub_step;
-                        pt.y = start_y + iy * sub_step;
-                        pt.z = start_z + iz * sub_step;
-                        upsampled_points.push_back(pt);
+        for (const auto& voxel : occupied_voxels) {
+            if (visited.count(voxel)) continue;
+            // BFS for connected component
+            std::vector<std::tuple<int,int,int>> queue = {voxel};
+            std::vector<std::tuple<int,int,int>> group;
+            visited.insert(voxel);
+            while (!queue.empty()) {
+                auto v = queue.back();
+                queue.pop_back();
+                group.push_back(v);
+                int ix = std::get<0>(v);
+                int iy = std::get<1>(v);
+                int iz = std::get<2>(v);
+                for (int d = 0; d < 6; ++d) {
+                    auto n = std::make_tuple(ix + dx[d], iy + dy[d], iz + dz[d]);
+                    if (occupied_voxels.count(n) && !visited.count(n)) {
+                        visited.insert(n);
+                        queue.push_back(n);
                     }
                 }
             }
-        }
-        return upsampled_points;
-    }
-
-    std::vector<pcl::PointXYZ, Eigen::aligned_allocator<pcl::PointXYZ>>
-    smooth_points(const std::vector<pcl::PointXYZ, Eigen::aligned_allocator<pcl::PointXYZ>>& input_points, double neighbor_radius)
-    {
-        std::vector<pcl::PointXYZ, Eigen::aligned_allocator<pcl::PointXYZ>> smoothed_points;
-        for (const auto& pt : input_points) {
-            Eigen::Vector3f sum(pt.x, pt.y, pt.z);
-            int count = 1;
-            for (const auto& neighbor : input_points) {
-                if (&pt == &neighbor) continue;
-                double dx = pt.x - neighbor.x;
-                double dy = pt.y - neighbor.y;
-                double dz = pt.z - neighbor.z;
-                double dist = std::sqrt(dx*dx + dy*dy + dz*dz);
-                if (dist < neighbor_radius * 1.01) {
-                    sum += Eigen::Vector3f(neighbor.x, neighbor.y, neighbor.z);
-                    count++;
-                }
+            if (group.size() >= static_cast<size_t>(min_group_size)) {
+                result.insert(group.begin(), group.end());
             }
-            pcl::PointXYZ smooth_pt;
-            smooth_pt.x = sum.x() / count;
-            smooth_pt.y = sum.y() / count;
-            smooth_pt.z = sum.z() / count;
-            smoothed_points.push_back(smooth_pt);
         }
-        return smoothed_points;
+        return result;
     }
 
     void callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
     {
-        size_t current_count = msg->width * msg->height;
-        if (current_count <= last_point_count_) {
-            if (!last_msg_.data.empty())
-                pub_->publish(last_msg_);
-            return;
+        // 1. Voxelize input at voxel_size_
+        std::map<std::tuple<int,int,int>, int> voxel_map;
+        sensor_msgs::PointCloud2ConstIterator<float> iter_x(*msg, "x");
+        sensor_msgs::PointCloud2ConstIterator<float> iter_y(*msg, "y");
+        sensor_msgs::PointCloud2ConstIterator<float> iter_z(*msg, "z");
+        for (size_t i = 0; i < msg->width * msg->height; ++i, ++iter_x, ++iter_y, ++iter_z) {
+            int ix = static_cast<int>(std::floor(*iter_x / voxel_size_));
+            int iy = static_cast<int>(std::floor(*iter_y / voxel_size_));
+            int iz = static_cast<int>(std::floor(*iter_z / voxel_size_));
+            voxel_map[{ix, iy, iz}]++;
         }
-        last_point_count_ = current_count;
-        auto filtered_points = filter_sparse_groups(*msg, voxel_size_*10, 30);
 
-        // Convert ROS msg to PCL cloud
-        pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
-        cloud->points = filtered_points;
-        cloud->width = static_cast<uint32_t>(filtered_points.size());
-        cloud->height = 1;
-        cloud->is_dense = true;
+        // 2. Find all occupied voxels (at least 1 point)
+        std::set<std::tuple<int,int,int>> occupied_voxels;
+        for (const auto& kv : voxel_map) {
+            occupied_voxels.insert(kv.first);
+        }
 
-        // Create octree at voxel_size_ resolution
-        pcl::octree::OctreePointCloudOccupancy<pcl::PointXYZ> octree(voxel_size_);
-        octree.setInputCloud(cloud);
-        octree.addPointsFromInputCloud();
+        // 3. Filter out small groups (keep only groups with at least 50 voxels)
+        occupied_voxels = filter_sparse_voxel_groups(occupied_voxels, 50);
 
-        // Extract voxel centers
-        std::vector<pcl::PointXYZ, Eigen::aligned_allocator<pcl::PointXYZ>> voxelCenters;
-        octree.getOccupiedVoxelCenters(voxelCenters);
+        // 3. For each voxel, check each face for neighbors
+        std::vector<pcl::PointXYZ, Eigen::aligned_allocator<pcl::PointXYZ>> shell_points;
+        const int dx[6] = {1, -1, 0, 0, 0, 0};
+        const int dy[6] = {0, 0, 1, -1, 0, 0};
+        const int dz[6] = {0, 0, 0, 0, 1, -1};
+        for (const auto& idx : occupied_voxels) {
+            int ix = std::get<0>(idx);
+            int iy = std::get<1>(idx);
+            int iz = std::get<2>(idx);
+            Eigen::Vector3f center(
+                (ix + 0.5f) * voxel_size_,
+                (iy + 0.5f) * voxel_size_,
+                (iz + 0.5f) * voxel_size_);
+            for (int face = 0; face < 6; ++face) {
+                auto nidx = std::make_tuple(ix + dx[face], iy + dy[face], iz + dz[face]);
+                if (occupied_voxels.count(nidx) == 0) {
+                    upsample_voxel_face(center, voxel_size_, upsample_N_, face, shell_points);
+                }
+            }
+        }
 
-        // Upsample using the function
-        auto upsampled_points = upsample_voxels(voxelCenters, voxel_size_, upsample_N_);
-        // Only keep the outer surface points
-        auto outer_surface_upsampled = keep_outer_surface_voxels(upsampled_points, voxel_size_/upsample_N_);// Work from here!!
+        // 4. Output as point cloud
+        pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_shell(new pcl::PointCloud<pcl::PointXYZ>);
+        cloud_shell->points = shell_points;
+        cloud_shell->width = static_cast<uint32_t>(shell_points.size());
+        cloud_shell->height = 1;
+        cloud_shell->is_dense = true;
 
-        double neighbor_radius = voxel_size_ / upsample_N_;
-        auto smoothed_points = smooth_points(outer_surface_upsampled, neighbor_radius);
-
-
-        pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_upsampled(new pcl::PointCloud<pcl::PointXYZ>);
-        cloud_upsampled->points = smoothed_points;
-        cloud_upsampled->width = static_cast<uint32_t>(cloud_upsampled->points.size());
-        cloud_upsampled->height = 1;
-        cloud_upsampled->is_dense = true;
-
-        // Convert back to ROS msg
         sensor_msgs::msg::PointCloud2 output;
-        pcl::toROSMsg(*cloud_upsampled, output);
+        pcl::toROSMsg(*cloud_shell, output);
         output.header = msg->header;
-
         pub_->publish(output);
         last_msg_ = output;
+        last_point_count_ = msg->width * msg->height;
     }
 };
 
