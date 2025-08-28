@@ -101,149 +101,97 @@ void TsdfToPointCloudNode::update_static_accumulation(
   }
 }
 
-void TsdfToPointCloudNode::fill_cavities_xy(float voxel_res, float max_radius)
+void TsdfToPointCloudNode::morphological_closing_xy(float voxel_res, int kernel_radius)
 {
-  // 1. Build 2D occupancy grids for each z-slice and determine z-bounds
-  std::unordered_map<int, std::set<std::pair<int, int>>> slice_occupied;
-  int min_z = INT_MAX, max_z = INT_MIN;
-
-  if (accumulated_points_.empty()) {
-      RCLCPP_INFO(this->get_logger(), "No accumulated points to process.");
-      return;
-  }
-
+  // 1. Group white points by z-index (quantized indices)
+  std::unordered_map<int, std::set<std::pair<int, int>>> white_points;
   for (const auto& kv : accumulated_points_) {
-    auto [qx, qy, qz] = kv.first;
-    slice_occupied[qz].insert({qx, qy});
-    min_z = std::min(min_z, qz);
-    max_z = std::max(max_z, qz);
+    if (kv.second.r == 255 && kv.second.g == 255 && kv.second.b == 255) {
+      int x = std::get<0>(kv.first); // quantized
+      int y = std::get<1>(kv.first); // quantized
+      int z = std::get<2>(kv.first); // quantized
+      white_points[z].insert({x, y});
+    }
   }
 
-  size_t points_added = 0;
-  size_t total_cavities_found = 0;
-
-  // Iterate over all relevant z-slices
-  for (int qz = min_z; qz <= max_z; ++qz) {
-    RCLCPP_INFO(this->get_logger(), "Processing z-slice %d.", qz);
-    const auto& occupied_xy = slice_occupied.count(qz) ? slice_occupied.at(qz) : std::set<std::pair<int, int>>{};
-
-    // 2. Perform multiple morphological dilation passes to close gaps
-    std::set<std::pair<int, int>> dilated_occupied = occupied_xy;
-    const int dilation_passes = 2; // Dilate 2 times to close wider gaps
-    for (int i = 0; i < dilation_passes; ++i) {
-      std::set<std::pair<int, int>> temp_dilated = dilated_occupied;
-      for (const auto& p : dilated_occupied) {
-        int x = p.first;
-        int y = p.second;
-        for (int dx = -1; dx <= 1; ++dx) {
-          for (int dy = -1; dy <= 1; ++dy) {
-            if (dx == 0 && dy == 0) continue;
-            temp_dilated.insert({x + dx, y + dy});
-          }
-        }
-      }
-      dilated_occupied = temp_dilated;
-    }
-
-    if (dilated_occupied.empty()) {
-        continue;
-    }
-
-    // 3. Find bounds for this z-slice using the dilated grid
+  for (const auto& [z, points] : white_points) {
+    // Find bounds
     int min_x = INT_MAX, max_x = INT_MIN, min_y = INT_MAX, max_y = INT_MIN;
-    for (const auto& xy : dilated_occupied) {
-      min_x = std::min(min_x, xy.first);
-      max_x = std::max(max_x, xy.first);
-      min_y = std::min(min_y, xy.second);
-      max_y = std::max(max_y, xy.second);
+    for (const auto& p : points) {
+      min_x = std::min(min_x, p.first);
+      max_x = std::max(max_x, p.first);
+      min_y = std::min(min_y, p.second);
+      max_y = std::max(max_y, p.second);
     }
-    min_x -= 1; max_x += 1; min_y -= 1; max_y += 1;
+    min_x -= kernel_radius; max_x += kernel_radius;
+    min_y -= kernel_radius; max_y += kernel_radius;
+    int size_x = max_x - min_x + 1;
+    int size_y = max_y - min_y + 1;
 
-    // 4. Flood fill empty regions to find cavities
-    std::set<std::pair<int, int>> visited;
-    
-    auto is_occupied = [&](int x, int y) {
-      return dilated_occupied.count({x, y}) > 0;
-    };
+    // Build binary grid
+    std::vector<std::vector<uint8_t>> grid(size_x, std::vector<uint8_t>(size_y, 0));
+    for (const auto& p : points) {
+      grid[p.first - min_x][p.second - min_y] = 1;
+    }
 
-    std::vector<std::vector<std::pair<int, int>>> cavities;
-    for (int x = min_x; x <= max_x; ++x) {
-      for (int y = min_y; y <= max_y; ++y) {
-        std::pair<int, int> p = {x, y};
-        if (visited.count(p) || is_occupied(x, y)) {
-          continue;
-        }
-
-        std::queue<std::pair<int, int>> q;
-        std::vector<std::pair<int, int>> region;
-        bool touches_object_boundary = false;
-        
-        q.push(p);
-        visited.insert(p);
-
-        while (!q.empty()) {
-          auto [cx, cy] = q.front();
-          q.pop();
-          region.push_back({cx, cy});
-
-          for (auto [dx, dy] : std::vector<std::pair<int, int>>{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}) {
-            int nx = cx + dx, ny = cy + dy;
-            std::pair<int, int> np = {nx, ny};
-            if (is_occupied(nx, ny)) {
-              touches_object_boundary = true;
+    // Dilation
+    std::vector<std::vector<uint8_t>> dilated = grid;
+    for (int i = 0; i < size_x; ++i) {
+      for (int j = 0; j < size_y; ++j) {
+        if (grid[i][j]) {
+          for (int dx = -kernel_radius; dx <= kernel_radius; ++dx) {
+            for (int dy = -kernel_radius; dy <= kernel_radius; ++dy) {
+              int ni = i + dx, nj = j + dy;
+              if (ni >= 0 && ni < size_x && nj >= 0 && nj < size_y) {
+                dilated[ni][nj] = 1;
+              }
             }
-            if (nx < min_x || nx > max_x || ny < min_y || ny > max_y || visited.count(np) || is_occupied(nx, ny)) {
-              continue;
-            }
-            visited.insert(np);
-            q.push(np);
           }
         }
-        if (!touches_object_boundary) {
-          cavities.push_back(region);
+      }
+    }
+
+    // Erosion
+    std::vector<std::vector<uint8_t>> closed(size_x, std::vector<uint8_t>(size_y, 1));
+    for (int i = 0; i < size_x; ++i) {
+      for (int j = 0; j < size_y; ++j) {
+        bool erode = false;
+        for (int dx = -kernel_radius; dx <= kernel_radius && !erode; ++dx) {
+          for (int dy = -kernel_radius; dy <= kernel_radius && !erode; ++dy) {
+            int ni = i + dx, nj = j + dy;
+            if (ni < 0 || ni >= size_x || nj < 0 || nj >= size_y || dilated[ni][nj] == 0) {
+              erode = true;
+            }
+          }
+        }
+        closed[i][j] = erode ? 0 : 1;
+      }
+    }
+
+    // Add new black points (those that are 1 in closed but not in original)
+    size_t black_added = 0;
+    for (int i = 0; i < size_x; ++i) {
+      for (int j = 0; j < size_y; ++j) {
+        if (closed[i][j] && !grid[i][j]) {
+          int x = min_x + i; // quantized
+          int y = min_y + j; // quantized
+          auto key = std::make_tuple(x, y, z);
+          if (accumulated_points_.count(key) == 0) {
+            float fx = x * voxel_res;
+            float fy = y * voxel_res;
+            float fz = z * voxel_res;
+            accumulated_points_[key] = ColoredPoint{fx, fy, fz, 0, 0, 0};
+            ++black_added;
+          }
         }
       }
     }
-
-    if (cavities.size() > 0) {
-      RCLCPP_INFO(this->get_logger(), "Found %zu cavities in z-slice %d.", cavities.size(), qz);
+    if (black_added > 0) {
+      RCLCPP_INFO(this->get_logger(), "Morphological closing (z=%d): added %zu black points", z, black_added);
     }
-    total_cavities_found += cavities.size();
-
-    // 5. Fill cavities in this z-slice if within radius
-    for (const auto& region : cavities) {
-      float cx = 0, cy = 0;
-      for (const auto& p : region) { cx += p.first; cy += p.second; }
-      cx /= region.size(); cy /= region.size();
-      float sum_dist = 0;
-      for (const auto& p : region) {
-        float dist = std::hypot(p.first - cx, p.second - cy) * voxel_res;
-        sum_dist += dist;
-      }
-      float avg_dist = sum_dist / region.size();
-      RCLCPP_INFO(this->get_logger(), "Cavity average distance (z=%d): %.3f", qz, avg_dist);
-      if (avg_dist > max_radius) continue;
-
-      for (const auto& p : region) {
-        auto key = std::make_tuple(p.first, p.second, qz);
-        if (accumulated_points_.count(key) == 0) {
-          float fx = p.first * voxel_res;
-          float fy = p.second * voxel_res;
-          float fz = qz * voxel_res;
-          accumulated_points_[key] = ColoredPoint{fx, fy, fz, 0, 0, 0};
-          ++points_added;
-        }
-      }
-    }
-  }
-
-  if (total_cavities_found > 0) {
-    RCLCPP_INFO(this->get_logger(), "Total cavities found: %zu", total_cavities_found);
-  }
-  if (points_added > 0) {
-    RCLCPP_INFO(this->get_logger(), "Cavity filling: added %zu points", points_added);
   }
 }
+
 
 sensor_msgs::msg::PointCloud2 TsdfToPointCloudNode::create_static_pointcloud(const std_msgs::msg::Header& header)
 {
@@ -287,7 +235,8 @@ void TsdfToPointCloudNode::callback(const nvblox_msgs::msg::VoxelBlockLayer::Sha
 
   // 2. Update static accumulation
   update_static_accumulation(current_points);
-  fill_cavities_xy(voxel_size_, cavity_fill_max_radius_);
+
+  morphological_closing_xy(voxel_size_, cavity_fill_max_radius_);
 
   // 3. Create and publish static (white) pointcloud
   auto static_msg = create_static_pointcloud(msg->header);
