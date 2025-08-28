@@ -95,9 +95,14 @@ sensor_msgs::msg::PointCloud2 TsdfToPointCloudNode::create_colored_pointcloud(
 void TsdfToPointCloudNode::update_static_accumulation(
     const std::unordered_map<std::tuple<int, int, int>, ColoredPoint>& current_points)
 {
-  // Only add new points, never remove
   for (const auto & kv : current_points) {
-    accumulated_points_.emplace(kv.first, kv.second);
+    // If the point exists and is black, overwrite it with the new (white) point
+    auto it = accumulated_points_.find(kv.first);
+    if (it != accumulated_points_.end() && it->second.r == 0 && it->second.g == 0 && it->second.b == 0) {
+      it->second = kv.second;
+    } else {
+      accumulated_points_.emplace(kv.first, kv.second);
+    }
   }
 }
 
