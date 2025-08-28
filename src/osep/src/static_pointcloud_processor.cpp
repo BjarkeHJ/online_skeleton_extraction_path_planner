@@ -4,10 +4,13 @@
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl_conversions/pcl_conversions.h>
+#include <pcl/filters/voxel_grid.h>
 #include <vector>
 #include <map>
 #include <set>
 #include <Eigen/Core>
+#include <tuple>
+#include <cmath>
 
 class StaticPointcloudPostprocessNode : public rclcpp::Node
 {
@@ -43,6 +46,23 @@ private:
     size_t last_point_count_ = 0;
     sensor_msgs::msg::PointCloud2 last_msg_;
 
+    // Quantize a point to voxel index
+    static inline std::tuple<int, int, int> quantize(float x, float y, float z, float res) {
+        return std::make_tuple(
+            static_cast<int>(std::floor(x / res)),
+            static_cast<int>(std::floor(y / res)),
+            static_cast<int>(std::floor(z / res)));
+    }
+
+    // Get voxel center from index
+    static inline Eigen::Vector3f voxel_center(int ix, int iy, int iz, float res) {
+        return Eigen::Vector3f(
+            (ix + 0.5f) * res,
+            (iy + 0.5f) * res,
+            (iz + 0.5f) * res
+        );
+    }
+
     // Helper: Upsample a voxel face into a grid of points
     void upsample_voxel_face(
         const Eigen::Vector3f& voxel_center,
@@ -63,15 +83,18 @@ private:
             case 4: face_center.z() += half; u = {1, 0, 0}; v = {0, 1, 0}; break; // +z
             case 5: face_center.z() -= half; u = {1, 0, 0}; v = {0, 1, 0}; break; // -z
         }
-        Eigen::Vector3f origin = face_center - 0.5f * voxel_size * u - 0.5f * voxel_size * v + 0.5f * step * u + 0.5f * step * v;
+        // The lower-left corner of the face
+        Eigen::Vector3f corner = face_center - 0.5f * voxel_size * u - 0.5f * voxel_size * v;
         for (int i = 0; i < upsample_N; ++i) {
             for (int j = 0; j < upsample_N; ++j) {
-                Eigen::Vector3f pt = origin + i * step * u + j * step * v;
+                // Center each mini-voxel on the face
+                Eigen::Vector3f pt = corner + (i + 0.5f) * step * u + (j + 0.5f) * step * v;
                 out_points.emplace_back(pt.x(), pt.y(), pt.z());
             }
         }
     }
 
+    // Helper: Find connected voxel groups and keep only large ones
     std::set<std::tuple<int,int,int>> filter_sparse_voxel_groups(
         const std::set<std::tuple<int,int,int>>& occupied_voxels,
         int min_group_size)
@@ -118,10 +141,8 @@ private:
         sensor_msgs::PointCloud2ConstIterator<float> iter_y(*msg, "y");
         sensor_msgs::PointCloud2ConstIterator<float> iter_z(*msg, "z");
         for (size_t i = 0; i < msg->width * msg->height; ++i, ++iter_x, ++iter_y, ++iter_z) {
-            int ix = static_cast<int>(std::floor(*iter_x / voxel_size_));
-            int iy = static_cast<int>(std::floor(*iter_y / voxel_size_));
-            int iz = static_cast<int>(std::floor(*iter_z / voxel_size_));
-            voxel_map[{ix, iy, iz}]++;
+            auto idx = quantize(*iter_x, *iter_y, *iter_z, voxel_size_);
+            voxel_map[idx]++;
         }
 
         // 2. Find all occupied voxels (at least 1 point)
@@ -133,7 +154,7 @@ private:
         // 3. Filter out small groups (keep only groups with at least 50 voxels)
         occupied_voxels = filter_sparse_voxel_groups(occupied_voxels, 50);
 
-        // 3. For each voxel, check each face for neighbors
+        // 4. For each voxel, check each face for neighbors
         std::vector<pcl::PointXYZ, Eigen::aligned_allocator<pcl::PointXYZ>> shell_points;
         const int dx[6] = {1, -1, 0, 0, 0, 0};
         const int dy[6] = {0, 0, 1, -1, 0, 0};
@@ -142,10 +163,7 @@ private:
             int ix = std::get<0>(idx);
             int iy = std::get<1>(idx);
             int iz = std::get<2>(idx);
-            Eigen::Vector3f center(
-                (ix + 0.5f) * voxel_size_,
-                (iy + 0.5f) * voxel_size_,
-                (iz + 0.5f) * voxel_size_);
+            Eigen::Vector3f center = voxel_center(ix, iy, iz, voxel_size_);
             for (int face = 0; face < 6; ++face) {
                 auto nidx = std::make_tuple(ix + dx[face], iy + dy[face], iz + dz[face]);
                 if (occupied_voxels.count(nidx) == 0) {
@@ -154,15 +172,22 @@ private:
             }
         }
 
-        // 4. Output as point cloud
+        // 5. Output as point cloud
         pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_shell(new pcl::PointCloud<pcl::PointXYZ>);
         cloud_shell->points = shell_points;
         cloud_shell->width = static_cast<uint32_t>(shell_points.size());
         cloud_shell->height = 1;
         cloud_shell->is_dense = true;
 
+        // Apply voxel filter to remove duplicates/overlaps
+        pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZ>);
+        pcl::VoxelGrid<pcl::PointXYZ> sor;
+        sor.setInputCloud(cloud_shell);
+        sor.setLeafSize(voxel_size_ / upsample_N_, voxel_size_ / upsample_N_, voxel_size_ / upsample_N_);
+        sor.filter(*cloud_filtered);
+
         sensor_msgs::msg::PointCloud2 output;
-        pcl::toROSMsg(*cloud_shell, output);
+        pcl::toROSMsg(*cloud_filtered, output);
         output.header = msg->header;
         pub_->publish(output);
         last_msg_ = output;
