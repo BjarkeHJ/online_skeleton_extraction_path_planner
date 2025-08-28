@@ -5,7 +5,7 @@ FRAME_ID = "base_link"
 SAFETY_DISTANCE = 10.0
 INTERPOLATION_DISTANCE = 3.0
 INSPECTION_SPEED = 2.5
-VOXEL_SIZE = 0.5
+VOXEL_SIZE = 1.0
 
 def generate_launch_description():
     return LaunchDescription([
@@ -29,7 +29,7 @@ def generate_launch_description():
                 'input_topic': 'osep/tsdf/static_pointcloud',
                 'output_topic': 'osep/tsdf/upsampled_static_pointcloud',
                 'voxel_size': VOXEL_SIZE,
-                'upsample_N': 2
+                'upsample_N': 4
             }],
         ),
     ])
