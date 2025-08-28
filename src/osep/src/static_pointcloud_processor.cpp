@@ -174,8 +174,8 @@ private:
             occupied_voxels.insert(kv.first);
         }
 
-        // 3. Filter out small groups (keep only groups with at least 50 voxels)
-        occupied_voxels = filter_sparse_voxel_groups(occupied_voxels, 50);
+        // 3. Filter out small groups (keep only groups with at least 100 voxels)
+        occupied_voxels = filter_sparse_voxel_groups(occupied_voxels, 100);
 
         // 4. For each voxel, check each face for neighbors
         std::vector<pcl::PointXYZ, Eigen::aligned_allocator<pcl::PointXYZ>> shell_points;

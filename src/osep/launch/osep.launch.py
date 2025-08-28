@@ -6,6 +6,7 @@ FRAME_ID = "base_link"
 SAFETY_DISTANCE = 10.0
 INTERPOLATION_DISTANCE = 3.0
 INSPECTION_SPEED = 2.5
+VOXEL_SIZE = 0.5
 
 TOPIC_NAMES = {
     "VEL_CMD": '/osep/vel_cmd',
@@ -47,7 +48,7 @@ def generate_launch_description():
             name="costmap_2d_node",
             output="screen",
             parameters=[
-                {"resolution": 1.0},
+                {"resolution": VOXEL_SIZE},
                 {"free_center_radius": 5.0},
                 {"local_map_size": 400.0},
                 {"global_map_size": 1600.0},

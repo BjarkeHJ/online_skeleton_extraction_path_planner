@@ -11,7 +11,7 @@
     cuda_stream_type: 2  # 0: default, 1: blocking async, 2: non-blocking async, 3: per-thread default
 
     # Miscellaneous
-    voxel_size: 1.0
+    voxel_size: 0.5
     num_cameras: 1
     use_tf_transforms: true
     mapping_type: "static_tsdf"  # Options: ["static_tsdf", "static_occupancy"]
