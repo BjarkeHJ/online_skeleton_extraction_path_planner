@@ -74,21 +74,21 @@ private:
         float half = voxel_size / 2.0f;
         float step = voxel_size / upsample_N;
         Eigen::Vector3f face_center = voxel_center;
-        Eigen::Vector3f u, v;
+        Eigen::Vector3f u, v, normal;
         switch(face) {
-            case 0: face_center.x() += half; u = {0, 1, 0}; v = {0, 0, 1}; break; // +x
-            case 1: face_center.x() -= half; u = {0, 1, 0}; v = {0, 0, 1}; break; // -x
-            case 2: face_center.y() += half; u = {1, 0, 0}; v = {0, 0, 1}; break; // +y
-            case 3: face_center.y() -= half; u = {1, 0, 0}; v = {0, 0, 1}; break; // -y
-            case 4: face_center.z() += half; u = {1, 0, 0}; v = {0, 1, 0}; break; // +z
-            case 5: face_center.z() -= half; u = {1, 0, 0}; v = {0, 1, 0}; break; // -z
+            case 0: face_center.x() += half; u = {0, 1, 0}; v = {0, 0, 1}; normal = {1, 0, 0}; break; // +x
+            case 1: face_center.x() -= half; u = {0, 1, 0}; v = {0, 0, 1}; normal = {-1, 0, 0}; break; // -x
+            case 2: face_center.y() += half; u = {1, 0, 0}; v = {0, 0, 1}; normal = {0, 1, 0}; break; // +y
+            case 3: face_center.y() -= half; u = {1, 0, 0}; v = {0, 0, 1}; normal = {0, -1, 0}; break; // -y
+            case 4: face_center.z() += half; u = {1, 0, 0}; v = {0, 1, 0}; normal = {0, 0, 1}; break; // +z
+            case 5: face_center.z() -= half; u = {1, 0, 0}; v = {0, 1, 0}; normal = {0, 0, -1}; break; // -z
         }
         // The lower-left corner of the face
         Eigen::Vector3f corner = face_center - 0.5f * voxel_size * u - 0.5f * voxel_size * v;
         for (int i = 0; i < upsample_N; ++i) {
             for (int j = 0; j < upsample_N; ++j) {
-                // Center each mini-voxel on the face
-                Eigen::Vector3f pt = corner + (i + 0.5f) * step * u + (j + 0.5f) * step * v;
+                // Center each mini-voxel on the face, then move it half a step toward the voxel center
+                Eigen::Vector3f pt = corner + (i + 0.5f) * step * u + (j + 0.5f) * step * v - 0.5f * step * normal;
                 out_points.emplace_back(pt.x(), pt.y(), pt.z());
             }
         }
