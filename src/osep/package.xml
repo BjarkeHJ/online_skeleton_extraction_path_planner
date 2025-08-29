@@ -50,6 +50,9 @@
   <exec_depend>osep_skeleton_decomp</exec_depend>
   <exec_depend>osep_planning</exec_depend>
 
+  <!-- Results-->
+  <exec_depend>python3-open3d</exec_depend>
+
   <export>
     <build_type>ament_cmake</build_type>
   </export>

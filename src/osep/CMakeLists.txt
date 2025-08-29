@@ -48,4 +48,18 @@ install(DIRECTORY include/
 install(DIRECTORY config launch
   DESTINATION share/${PROJECT_NAME})
 
+
+# Install Python node
+install(
+  PROGRAMS src/static_pointcloud_saver.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME cloud_saver
+)
+
+install(
+  PROGRAMS src/publish_sample_pointcloud.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME cloud_publisher
+)
+
 ament_package()

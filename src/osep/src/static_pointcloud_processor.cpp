@@ -178,7 +178,7 @@ void StaticPointcloudPostprocessNode::callback(const sensor_msgs::msg::PointClou
             voxels = full_dilation(voxels);
         }
         if (n == N-1) {
-            voxels = full_erosion(voxels, 10);
+            voxels = full_erosion(voxels, 26);
             voxels = selective_dilation(voxels);
         }
     }

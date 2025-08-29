@@ -59,7 +59,7 @@
     maximum_input_queue_length: 10
 
     # Map Clearing Settings
-    map_clearing_radius_m: 300.0  # Disable if < 0.0
+    map_clearing_radius_m: *max_distance  # Disable if < 0.0
     map_clearing_frame_id: "base_link"
 
     # QoS Settings
@@ -117,7 +117,7 @@
       occupied_region_occupancy_probability: 0.90
       occupied_region_half_width_m: 1.0
       unobserved_region_occupancy_probability: 0.6
-      max_unobserved_to_keep_consecutive_occupancy_ms: 60000
+      max_unobserved_to_keep_consecutive_occupancy_ms: 10000
 
       # View Calculator
       raycast_subsampling_factor: 2
