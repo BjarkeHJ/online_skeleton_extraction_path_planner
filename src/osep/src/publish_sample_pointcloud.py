@@ -159,7 +159,7 @@ class PCDProcessorPublisher(Node):
         )
         self.publisher_.publish(msg)
         # Print a message (greenpoits / total points ) Coverage percent (%%)
-        green_points = np.sum(np.allclose(self.colors, [0.0, 1.0, 0.0], axis=1))
+        green_points = np.sum(np.all(np.isclose(self.colors, [0.0, 1.0, 0.0]), axis=1))
         total_points = self.points.shape[0]
         coverage = (green_points / total_points) * 100 if total_points > 0 else 0
         self.get_logger().info(f"Coverage: {green_points} / {total_points} points ({coverage:.2f}%)")
