@@ -7,6 +7,7 @@ SAFETY_DISTANCE = 10.0
 INTERPOLATION_DISTANCE = 3.0
 INSPECTION_SPEED = 2.5
 VOXEL_SIZE = 1.0
+CLEARING_DISTANCE = 1.0
 
 TOPIC_NAMES = {
     "VEL_CMD": '/osep/vel_cmd',
@@ -14,7 +15,8 @@ TOPIC_NAMES = {
     "COSTMAP": '/osep/local_costmap/costmap',
     "VIEWPOINTS": '/osep/viewpoints',
     "VIEWPOINTS_ADJUSTED": '/osep/viewpoints_adjusted',
-    "GROUND_TRUTH": '/osep/ground_truth'
+    "GROUND_TRUTH": '/osep/ground_truth',
+    "STATIC_POINTCLOUD": '/osep/tsdf/static_pointcloud'
 }
 
 def generate_launch_description():
@@ -26,7 +28,7 @@ def generate_launch_description():
             output='screen',    
             parameters=[{
                 'output_topic': 'osep/tsdf/pointcloud',
-                'static_output_topic': 'osep/tsdf/static_pointcloud',
+                'static_output_topic': TOPIC_NAMES["STATIC_POINTCLOUD"],
                 'cavity_fill_diameter': 5.0,
                 'voxel_size': VOXEL_SIZE
             }],
@@ -47,6 +49,7 @@ def generate_launch_description():
                 'path_topic': TOPIC_NAMES["PATH"],
                 'osep_vel_cmd': TOPIC_NAMES["VEL_CMD"],
                 'interpolation_distance': INTERPOLATION_DISTANCE,
+                'clearing_distance': CLEARING_DISTANCE,
                 'max_speed': 15.0,
                 'inspection_speed': INSPECTION_SPEED,
                 'max_yaw_to_velocity_angle_deg': 120.0,
