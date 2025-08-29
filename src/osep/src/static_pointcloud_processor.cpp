@@ -202,10 +202,12 @@ private:
             if (n <= 1) {
                 voxels = selective_dilation(voxels);
             } else {
+                // opening
                 voxels = full_erosion(voxels, 26);
                 voxels = full_dilation(voxels);
             }
             if (n == N-1) {
+                // opening ish
                 voxels = full_erosion(voxels, 10);
                 voxels = selective_dilation(voxels);
             }
