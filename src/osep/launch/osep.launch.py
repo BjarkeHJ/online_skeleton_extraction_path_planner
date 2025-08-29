@@ -7,6 +7,7 @@ SAFETY_DISTANCE = 10.0
 INTERPOLATION_DISTANCE = 3.0
 INSPECTION_SPEED = 2.5
 VOXEL_SIZE = 1.0
+CLEARING_DISTANCE = 1.0
 
 TOPIC_NAMES = {
     "VEL_CMD": '/osep/vel_cmd',
@@ -48,6 +49,7 @@ def generate_launch_description():
                 'path_topic': TOPIC_NAMES["PATH"],
                 'osep_vel_cmd': TOPIC_NAMES["VEL_CMD"],
                 'interpolation_distance': INTERPOLATION_DISTANCE,
+                'clearing_distance': CLEARING_DISTANCE,
                 'max_speed': 15.0,
                 'inspection_speed': INSPECTION_SPEED,
                 'max_yaw_to_velocity_angle_deg': 120.0,
