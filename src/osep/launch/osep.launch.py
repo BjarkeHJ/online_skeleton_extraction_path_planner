@@ -14,7 +14,8 @@ TOPIC_NAMES = {
     "COSTMAP": '/osep/local_costmap/costmap',
     "VIEWPOINTS": '/osep/viewpoints',
     "VIEWPOINTS_ADJUSTED": '/osep/viewpoints_adjusted',
-    "GROUND_TRUTH": '/osep/ground_truth'
+    "GROUND_TRUTH": '/osep/ground_truth',
+    "STATIC_POINTCLOUD": '/osep/tsdf/static_pointcloud'
 }
 
 def generate_launch_description():
@@ -26,7 +27,7 @@ def generate_launch_description():
             output='screen',    
             parameters=[{
                 'output_topic': 'osep/tsdf/pointcloud',
-                'static_output_topic': 'osep/tsdf/static_pointcloud',
+                'static_output_topic': TOPIC_NAMES["STATIC_POINTCLOUD"],
                 'cavity_fill_diameter': 5.0,
                 'voxel_size': VOXEL_SIZE
             }],
