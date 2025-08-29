@@ -119,8 +119,6 @@ class PCDProcessorPublisher(Node):
         within_dist = dists <= self.detection_distance
         indices = np.where(within_dist)[0]
         # Print number of points within distance
-        self.get_logger().info(f"Points within distance: {len(indices)}")
-
 
         for i in indices:
             pt = self.points[i]
@@ -160,7 +158,11 @@ class PCDProcessorPublisher(Node):
             points=points_with_rgb
         )
         self.publisher_.publish(msg)
-        self.get_logger().info(f"Published processed pointcloud with {self.points.shape[0]} points.")
+        # Print a message (greenpoits / total points ) Coverage percent (%%)
+        green_points = np.sum(np.allclose(self.colors, [0.0, 1.0, 0.0], axis=1))
+        total_points = self.points.shape[0]
+        coverage = (green_points / total_points) * 100 if total_points > 0 else 0
+        self.get_logger().info(f"Coverage: {green_points} / {total_points} points ({coverage:.2f}%)")
 
 
     def publish_pyramid_marker(self, drone_pos, drone_yaw):
