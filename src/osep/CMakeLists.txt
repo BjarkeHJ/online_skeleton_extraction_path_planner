@@ -62,4 +62,10 @@ install(
   RENAME cloud_publisher
 )
 
+install(
+  PROGRAMS src/publish_stl.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME stl_pblisher
+)
+
 ament_package()
