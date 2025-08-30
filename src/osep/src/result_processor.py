@@ -6,13 +6,11 @@ import sensor_msgs_py.point_cloud2 as pc2
 import open3d as o3d
 import numpy as np
 import os
-import tf2_ros
-from geometry_msgs.msg import TransformStamped, Point
+from geometry_msgs.msg import PoseStamped, Point
 from visualization_msgs.msg import Marker
 import math
 
 def get_yaw_from_quaternion(q):
-    # q = [x, y, z, w]
     siny_cosp = 2.0 * (q[3] * q[2] + q[0] * q[1])
     cosy_cosp = 1.0 - 2.0 * (q[1] * q[1] + q[2] * q[2])
     return math.atan2(siny_cosp, cosy_cosp)
@@ -56,8 +54,8 @@ class PCDProcessorPublisher(Node):
         self.declare_parameter('pyramid_width', 15.0)
         self.declare_parameter('pyramid_height', 15.0)
         self.declare_parameter('frame_id', 'odom')
-        self.declare_parameter('camera_frame', 'base_link')
         self.declare_parameter('detection_distance', 20.0)
+        self.declare_parameter('replayed_pose_topic', '/osep/replayed_path')
 
         topic = self.get_parameter('topic_name').get_parameter_value().string_value
         filename = self.get_parameter('filename').get_parameter_value().string_value
@@ -66,8 +64,8 @@ class PCDProcessorPublisher(Node):
         self.pyramid_width = self.get_parameter('pyramid_width').get_parameter_value().double_value
         self.pyramid_height = self.get_parameter('pyramid_height').get_parameter_value().double_value
         self.frame_id = self.get_parameter('frame_id').get_parameter_value().string_value
-        self.camera_frame = self.get_parameter('camera_frame').get_parameter_value().string_value
         self.detection_distance = self.get_parameter('detection_distance').get_parameter_value().double_value
+        self.replayed_pose_topic = self.get_parameter('replayed_pose_topic').get_parameter_value().string_value
 
         results_dir = "/workspaces/isaac_ros-dev/src/osep/results"
         self.pcd_path = os.path.join(results_dir, filename)
@@ -77,7 +75,6 @@ class PCDProcessorPublisher(Node):
 
         self.publisher_ = self.create_publisher(PointCloud2, topic, 1)
         self.marker_pub = self.create_publisher(Marker, "pyramid_marker", 1)
-        self.timer = self.create_timer(5.0, self.timer_callback)
         self.get_logger().info(f"Publishing {self.pcd_path} on topic: {topic}")
 
         # Load the point cloud once
@@ -87,26 +84,23 @@ class PCDProcessorPublisher(Node):
 
         self.get_logger().info(f"Loaded {self.points.shape[0]} points from {self.pcd_path}")
 
-        # TF buffer and listener
-        self.tf_buffer = tf2_ros.Buffer()
-        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
+        # Subscribe to the replayed pose
+        self.create_subscription(
+            PoseStamped,
+            self.replayed_pose_topic,
+            self.pose_callback,
+            10
+        )
 
-    def timer_callback(self):
-        try:
-            now = rclpy.time.Time()
-            trans: TransformStamped = self.tf_buffer.lookup_transform(
-                self.frame_id, self.camera_frame, now)
-            drone_pos = np.array([
-                trans.transform.translation.x,
-                trans.transform.translation.y,
-                trans.transform.translation.z
-            ])
-            q = trans.transform.rotation
-            drone_quat = [q.x, q.y, q.z, q.w]
-            drone_yaw = get_yaw_from_quaternion(drone_quat)
-        except Exception as e:
-            self.get_logger().warn(f"TF not available: {e}")
-            return
+    def pose_callback(self, msg):
+        drone_pos = np.array([
+            msg.pose.position.x,
+            msg.pose.position.y,
+            msg.pose.position.z
+        ])
+        q = msg.pose.orientation
+        drone_quat = [q.x, q.y, q.z, q.w]
+        drone_yaw = get_yaw_from_quaternion(drone_quat)
 
         # Publish the pyramid marker for visualization
         self.publish_pyramid_marker(drone_pos, drone_yaw)
@@ -116,9 +110,9 @@ class PCDProcessorPublisher(Node):
 
         vecs = self.points - drone_pos
         dists = np.linalg.norm(vecs, axis=1)
-        within_dist = dists <= self.detection_distance
-        indices = np.where(within_dist)[0]
-        # Print number of points within distance
+        # Only process points that are not already green and within distance
+        indices = np.where((dists <= self.detection_distance) & 
+                           (~np.all(np.isclose(self.colors, [0.0, 1.0, 0.0]), axis=1)))[0]
 
         for i in indices:
             pt = self.points[i]
@@ -126,9 +120,7 @@ class PCDProcessorPublisher(Node):
                 continue
             if raycast_occluded(pt, drone_pos, points_voxels, self.voxel_size):
                 continue
-            # Only update if not already green
-            if not np.allclose(self.colors[i], [0.0, 1.0, 0.0]):
-                self.colors[i] = [0.0, 1.0, 0.0]  # Set to green
+            self.colors[i] = [0.0, 1.0, 0.0]  # Set to green
 
         # Pack colors and publish
         rgb_uint8 = (self.colors * 255).astype(np.uint8)
@@ -147,7 +139,7 @@ class PCDProcessorPublisher(Node):
         points_with_rgb['z'] = self.points[:, 2]
         points_with_rgb['rgb'] = rgb_float
 
-        msg = pc2.create_cloud(
+        msg_pc = pc2.create_cloud(
             header=self.make_header(),
             fields=[
                 PointField(name='x', offset=0, datatype=PointField.FLOAT32, count=1),
@@ -157,13 +149,11 @@ class PCDProcessorPublisher(Node):
             ],
             points=points_with_rgb
         )
-        self.publisher_.publish(msg)
-        # Print a message (greenpoits / total points ) Coverage percent (%%)
+        self.publisher_.publish(msg_pc)
         green_points = np.sum(np.all(np.isclose(self.colors, [0.0, 1.0, 0.0]), axis=1))
         total_points = self.points.shape[0]
         coverage = (green_points / total_points) * 100 if total_points > 0 else 0
         self.get_logger().info(f"Coverage: {green_points} / {total_points} points ({coverage:.2f}%)")
-
 
     def publish_pyramid_marker(self, drone_pos, drone_yaw):
         marker = Marker()

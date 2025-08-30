@@ -12,32 +12,49 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
+        # Node(
+        #     package='osep',
+        #     executable='result_processor',
+        #     name='result_processor',
+        #     parameters=[
+        #         {'topic_name': '/osep/results_pcd'},
+        #         {'filename': 'wind_0_voxels_0.1.pcd'},
+        #         {'voxel_size': 0.1},
+        #         {'pyramid_length': 20.0},
+        #         {'pyramid_width': 15.0},
+        #         {'pyramid_height': 15.0},
+        #         {'frame_id': 'odom'},
+        #         {'camera_frame': 'base_link'},
+        #         {'detection_distance': 20.0}
+        #     ]
+        # ),
+        # Node(
+        #     package='osep',
+        #     executable='ground_truth_republisher',
+        #     name='ground_truth_republisher',
+        #     parameters=[
+        #         {'csv_file': 'wind_0_gt.csv'},
+        #         {'topic': '/osep/replayed_path'},
+        #         {'frame_id': 'odom'},
+        #         {'playback_rate': 1.0},
+        #         {'stride': 3}
+        #     ]
+        # ),
         Node(
             package='osep',
-            executable='result_processor',
-            name='result_processor',
+            executable='result_displayer_node',
+            name='result_displayer',
+            output='screen',
             parameters=[
-                {'topic_name': '/osep/results_pcd'},
-                {'filename': 'wind_0_voxels_0.1.pcd'},
+                {'csv_file': 'wind_0_gt.csv'},
+                {'pcd_file': 'wind_0_voxels_0.1.pcd'},
+                {'frame_id': 'odom'},
+                {'stride': 3},
                 {'voxel_size': 0.1},
                 {'pyramid_length': 20.0},
                 {'pyramid_width': 15.0},
                 {'pyramid_height': 15.0},
-                {'frame_id': 'odom'},
-                {'camera_frame': 'base_link'},
                 {'detection_distance': 20.0}
-            ]
-        ),
-        Node(
-            package='osep',
-            executable='ground_truth_republisher',
-            name='ground_truth_republisher',
-            parameters=[
-                {'csv_file': 'wind_0_gt.csv'},
-                {'topic': '/osep/replayed_path'},
-                {'frame_id': 'odom'},
-                {'playback_rate': 3.0},
-                {'stride': 3}
             ]
         ),
         Node(
