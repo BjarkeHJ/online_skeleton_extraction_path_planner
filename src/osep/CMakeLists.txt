@@ -74,4 +74,10 @@ install(
   RENAME ground_truth_republisher
 )
 
+install(
+  PROGRAMS src/static_tf_pub.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME static_tf_publisher
+)
+
 ament_package()

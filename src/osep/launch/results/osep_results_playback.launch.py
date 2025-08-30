@@ -41,6 +41,12 @@ def generate_launch_description():
             ]
         ),
         Node(
+            package='osep',
+            executable='static_tf_publisher',
+            name='static_tf_publisher',
+            output='screen',
+        ),
+        Node(
             package='rviz2',
             executable='rviz2',
             name='rviz2',
