@@ -85,4 +85,10 @@ install(
   DESTINATION lib/${PROJECT_NAME}
   RENAME ground_truth_path_saver
 )
+
+install(
+  PROGRAMS src/static_tf_pub.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME static_tf_publisher
+)
 ament_package()
