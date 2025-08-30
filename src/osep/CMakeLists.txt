@@ -91,17 +91,4 @@ install(
   DESTINATION lib/${PROJECT_NAME}
   RENAME ground_truth_path_saver
 )
-
-install(
-  PROGRAMS src/ground_truth_republisher.py
-  DESTINATION lib/${PROJECT_NAME}
-  RENAME ground_truth_republisher
-)
-
-install(
-  PROGRAMS src/static_tf_pub.py
-  DESTINATION lib/${PROJECT_NAME}
-  RENAME static_tf_publisher
-)
-
 ament_package()
