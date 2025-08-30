@@ -4,6 +4,10 @@ project(osep)
 find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_auto REQUIRED)
 
+find_package(sensor_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
 find_package(pcl_conversions REQUIRED)
 find_package(pcl_ros REQUIRED)
 ament_auto_find_build_dependencies()
@@ -36,8 +40,28 @@ ament_target_dependencies(static_pointcloud_postprocessor_node
   pcl_conversions
   pcl_ros
 )
-
 install(TARGETS static_pointcloud_postprocessor_node
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+add_executable(result_displayer_node src/result_displayer.cpp)
+target_include_directories(result_displayer_node PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+  ${PCL_INCLUDE_DIRS}
+)
+target_link_libraries(result_displayer_node ${PCL_LIBRARIES})
+ament_target_dependencies(result_displayer_node
+  rclcpp
+  sensor_msgs
+  geometry_msgs
+  nav_msgs
+  visualization_msgs
+  pcl_conversions
+  pcl_ros
+)
+
+install(TARGETS result_displayer_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -48,4 +72,17 @@ install(DIRECTORY include/
 install(DIRECTORY config launch
   DESTINATION share/${PROJECT_NAME})
 
+
+# Install Python node
+install(
+  PROGRAMS src/static_pointcloud_saver.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME cloud_saver
+)
+
+install(
+  PROGRAMS src/ground_truth_path_saver.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME ground_truth_path_saver
+)
 ament_package()

@@ -1,0 +1,3 @@
+g++ -O3 stl_to_pointcloud.cpp -o stl_to_pointcloud $(pkg-config --cflags --libs pcl_io-1.12 pcl_common-1.12 assimp)
+
+./stl_to_pointcloud 0.1

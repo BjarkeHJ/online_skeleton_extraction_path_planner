@@ -17,7 +17,16 @@ def generate_launch_description():
                 'input_topic': 'osep/tsdf/static_pointcloud',
                 'output_topic': 'osep/tsdf/shell_static_pointcloud',
                 'voxel_size': VOXEL_SIZE,
-                'upsample_N': 1,
+                'upsample_N': 2,
             }],
         ),
+        Node(
+            package='osep',
+            executable='cloud_saver',
+            name='cloud_saver',
+            parameters=[{
+                'topic_name': '/osep/tsdf/shell_static_pointcloud',
+                'filename': 'shell_static_cloud_60.pcd'
+            }]
+        )
     ])

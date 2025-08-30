@@ -46,3 +46,5 @@ isaac_ros_assets/
 # Compressed files
 *.tar.gz
 
+# Pointcloud files
+*.pcd
