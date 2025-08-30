@@ -50,6 +50,7 @@ def generate_launch_description():
                 {'pcd_file': 'wind_0_voxels_0.1.pcd'},
                 {'frame_id': 'odom'},
                 {'stride': 3},
+                {'playback_speed': 10.0},
                 {'voxel_size': 0.1},
                 {'pyramid_length': 20.0},
                 {'pyramid_width': 15.0},
