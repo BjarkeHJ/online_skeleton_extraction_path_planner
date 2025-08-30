@@ -30,19 +30,41 @@ namespace std {
     };
 }
 
-// Uniformly sample points on a triangle mesh
-pcl::PointCloud<pcl::PointXYZ>::Ptr sample_mesh_surface(const aiMesh* mesh, int samples_per_triangle) {
+pcl::PointCloud<pcl::PointXYZ>::Ptr sample_mesh_surface(const aiMesh* mesh, int total_samples) {
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
+    std::vector<double> areas;
+    double total_area = 0.0;
+
+    // Compute area for each triangle
+    for (unsigned int f = 0; f < mesh->mNumFaces; ++f) {
+        const aiFace& face = mesh->mFaces[f];
+        if (face.mNumIndices != 3) {
+            areas.push_back(0.0);
+            continue;
+        }
+        aiVector3D v0 = mesh->mVertices[face.mIndices[0]];
+        aiVector3D v1 = mesh->mVertices[face.mIndices[1]];
+        aiVector3D v2 = mesh->mVertices[face.mIndices[2]];
+        aiVector3D e1 = v1 - v0;
+        aiVector3D e2 = v2 - v0;
+        double area = 0.5 * (e1 ^ e2).Length();
+        areas.push_back(area);
+        total_area += area;
+    }
+
+    // Sample triangles proportional to area
     std::mt19937 gen(42);
     std::uniform_real_distribution<float> dist(0.0f, 1.0f);
 
     for (unsigned int f = 0; f < mesh->mNumFaces; ++f) {
+        int n_samples = static_cast<int>(std::round(total_samples * (areas[f] / total_area)));
+        if (n_samples == 0) continue;
         const aiFace& face = mesh->mFaces[f];
         if (face.mNumIndices != 3) continue;
         aiVector3D v0 = mesh->mVertices[face.mIndices[0]];
         aiVector3D v1 = mesh->mVertices[face.mIndices[1]];
         aiVector3D v2 = mesh->mVertices[face.mIndices[2]];
-        for (int i = 0; i < samples_per_triangle; ++i) {
+        for (int i = 0; i < n_samples; ++i) {
             float r1 = std::sqrt(dist(gen));
             float r2 = dist(gen);
             float a = 1 - r1;
@@ -88,7 +110,7 @@ int main(int argc, char** argv) {
         pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
         for (unsigned int m = 0; m < scene->mNumMeshes; ++m) {
             const aiMesh* mesh = scene->mMeshes[m];
-            auto sampled = sample_mesh_surface(mesh, 2000); // 2000 samples per triangle
+            auto sampled = sample_mesh_surface(mesh, 1e8); // (adjust as needed)
             *cloud += *sampled;
         }
         if (cloud->empty()) continue;

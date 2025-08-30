@@ -234,32 +234,82 @@ private:
         return true;
     }
 
-    // Helper: Raycast occlusion
     bool raycast_occluded(const Eigen::Vector3d& pt, const Eigen::Vector3d& drone_pos,
-                          const std::unordered_set<std::tuple<int,int,int>>& points_set, double voxel_size)
+                        const std::unordered_set<std::tuple<int,int,int>>& points_set, double voxel_size)
     {
-        Eigen::Vector3d direction = pt - drone_pos;
-        double dist = direction.norm();
+        Eigen::Vector3d dir = pt - drone_pos;
+        double dist = dir.norm();
         if (dist < 1e-6) return false;
-        direction /= dist;
-        int steps = static_cast<int>(dist / voxel_size);
-        auto target_voxel = std::make_tuple(
+        dir /= dist;
+
+        // Start and end voxel
+        auto voxel_from = std::make_tuple(
+            static_cast<int>(std::floor(drone_pos.x() / voxel_size)),
+            static_cast<int>(std::floor(drone_pos.y() / voxel_size)),
+            static_cast<int>(std::floor(drone_pos.z() / voxel_size))
+        );
+        auto voxel_to = std::make_tuple(
             static_cast<int>(std::floor(pt.x() / voxel_size)),
             static_cast<int>(std::floor(pt.y() / voxel_size)),
             static_cast<int>(std::floor(pt.z() / voxel_size))
         );
-        for (int i = 1; i < steps; ++i) {
-            Eigen::Vector3d pos = drone_pos + direction * (i * voxel_size);
-            auto voxel = std::make_tuple(
-                static_cast<int>(std::floor(pos.x() / voxel_size)),
-                static_cast<int>(std::floor(pos.y() / voxel_size)),
-                static_cast<int>(std::floor(pos.z() / voxel_size))
-            );
-            if (points_set.count(voxel) && voxel != target_voxel) {
-                return true;
+
+        // Current voxel
+        int x = std::get<0>(voxel_from);
+        int y = std::get<1>(voxel_from);
+        int z = std::get<2>(voxel_from);
+
+        int x_end = std::get<0>(voxel_to);
+        int y_end = std::get<1>(voxel_to);
+        int z_end = std::get<2>(voxel_to);
+
+        // Step direction
+        int stepX = (dir.x() > 0) ? 1 : -1;
+        int stepY = (dir.y() > 0) ? 1 : -1;
+        int stepZ = (dir.z() > 0) ? 1 : -1;
+
+        // Compute tMax (distance to first voxel boundary) and tDelta (step size per voxel)
+        auto voxel_boundary = [&](double coord, double d, int v) {
+            return (d > 0) ? ( (v + 1) * voxel_size - coord ) / d
+                        : ( coord - v * voxel_size ) / -d;
+        };
+
+        double tMaxX = voxel_boundary(drone_pos.x(), dir.x(), x);
+        double tMaxY = voxel_boundary(drone_pos.y(), dir.y(), y);
+        double tMaxZ = voxel_boundary(drone_pos.z(), dir.z(), z);
+
+        double tDeltaX = std::abs(voxel_size / dir.x());
+        double tDeltaY = std::abs(voxel_size / dir.y());
+        double tDeltaZ = std::abs(voxel_size / dir.z());
+
+        // Traverse voxels until we reach the target voxel
+        while (!(x == x_end && y == y_end && z == z_end)) {
+            auto voxel = std::make_tuple(x, y, z);
+            if (points_set.count(voxel) && voxel != voxel_to) {
+                return true; // occluded
+            }
+
+            // Step to next voxel
+            if (tMaxX < tMaxY) {
+                if (tMaxX < tMaxZ) {
+                    x += stepX;
+                    tMaxX += tDeltaX;
+                } else {
+                    z += stepZ;
+                    tMaxZ += tDeltaZ;
+                }
+            } else {
+                if (tMaxY < tMaxZ) {
+                    y += stepY;
+                    tMaxY += tDeltaY;
+                } else {
+                    z += stepZ;
+                    tMaxZ += tDeltaZ;
+                }
             }
         }
-        return false;
+
+        return false; // no occlusion
     }
 
     // Helper: Publish point cloud

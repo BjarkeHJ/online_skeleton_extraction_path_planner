@@ -81,12 +81,6 @@ install(
 )
 
 install(
-  PROGRAMS src/result_processor.py
-  DESTINATION lib/${PROJECT_NAME}
-  RENAME result_processor
-)
-
-install(
   PROGRAMS src/ground_truth_path_saver.py
   DESTINATION lib/${PROJECT_NAME}
   RENAME ground_truth_path_saver
