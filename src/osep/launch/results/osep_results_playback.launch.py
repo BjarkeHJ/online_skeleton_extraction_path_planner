@@ -25,7 +25,7 @@ def generate_launch_description():
                 {'playback_speed': 10.0},
                 {'voxel_size': 0.1},
                 {'pyramid_length': 20.0},
-                {'pyramid_width': 15.0},
+                {'pyramid_width': 20.0},
                 {'pyramid_height': 15.0},
                 {'detection_distance': 20.0}
             ]
