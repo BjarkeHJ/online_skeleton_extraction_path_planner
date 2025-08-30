@@ -257,76 +257,76 @@ private:
     // Returns true if the point is occluded (an occupied voxel closer than the target)
     // --------------------
     bool raycast_occluded(const Eigen::Vector3d& pt, const Eigen::Vector3d& drone_pos,
-                          const VoxelSet& points_set, double voxel_size) const
-    {
-        Eigen::Vector3d dir = pt - drone_pos;
-        const double dist = dir.norm();
-        if (dist < 1e-9) return false;
-        dir /= dist;
+                            const VoxelSet& points_set, double voxel_size) const
+        {
+            Eigen::Vector3d dir = pt - drone_pos;
+            const double dist = dir.norm();
+            if (dist < 1e-9) return false;
+            dir /= dist;
 
-        const double inv_voxel = 1.0 / voxel_size;
-        int x = ffloor_to_int(drone_pos.x() * inv_voxel);
-        int y = ffloor_to_int(drone_pos.y() * inv_voxel);
-        int z = ffloor_to_int(drone_pos.z() * inv_voxel);
-        const int x_end = ffloor_to_int(pt.x() * inv_voxel);
-        const int y_end = ffloor_to_int(pt.y() * inv_voxel);
-        const int z_end = ffloor_to_int(pt.z() * inv_voxel);
-        const uint64_t target_key = pack_voxel(x_end, y_end, z_end);
+            const double inv_voxel = 1.0 / voxel_size;
+            int x = ffloor_to_int(drone_pos.x() * inv_voxel);
+            int y = ffloor_to_int(drone_pos.y() * inv_voxel);
+            int z = ffloor_to_int(drone_pos.z() * inv_voxel);
+            const int x_end = ffloor_to_int(pt.x() * inv_voxel);
+            const int y_end = ffloor_to_int(pt.y() * inv_voxel);
+            const int z_end = ffloor_to_int(pt.z() * inv_voxel);
+            const uint64_t target_key = pack_voxel(x_end, y_end, z_end);
 
-        const int stepX = (dir.x() > 0.0) ? 1 : -1;
-        const int stepY = (dir.y() > 0.0) ? 1 : -1;
-        const int stepZ = (dir.z() > 0.0) ? 1 : -1;
+            const int stepX = (dir.x() > 0.0) ? 1 : -1;
+            const int stepY = (dir.y() > 0.0) ? 1 : -1;
+            const int stepZ = (dir.z() > 0.0) ? 1 : -1;
 
-        auto first_boundary = [&](double pos, double d, int v)->double {
-            if (std::abs(d) < 1e-12) return std::numeric_limits<double>::infinity();
-            double next_plane = (d > 0.0) ? ((v + 1) * voxel_size) : (v * voxel_size);
-            return (next_plane - pos) / d;
-        };
-        auto delta_t = [&](double d)->double {
-            return (std::abs(d) < 1e-12) ? std::numeric_limits<double>::infinity() : voxel_size / std::abs(d);
-        };
+            auto first_boundary = [&](double pos, double d, int v)->double {
+                if (std::abs(d) < 1e-12) return std::numeric_limits<double>::infinity();
+                double next_plane = (d > 0.0) ? ((v + 1) * voxel_size) : (v * voxel_size);
+                return (next_plane - pos) / d;
+            };
+            auto delta_t = [&](double d)->double {
+                return (std::abs(d) < 1e-12) ? std::numeric_limits<double>::infinity() : voxel_size / std::abs(d);
+            };
 
-        double tMaxX = first_boundary(drone_pos.x(), dir.x(), x);
-        double tMaxY = first_boundary(drone_pos.y(), dir.y(), y);
-        double tMaxZ = first_boundary(drone_pos.z(), dir.z(), z);
+            double tMaxX = first_boundary(drone_pos.x(), dir.x(), x);
+            double tMaxY = first_boundary(drone_pos.y(), dir.y(), y);
+            double tMaxZ = first_boundary(drone_pos.z(), dir.z(), z);
 
-        double tDeltaX = delta_t(dir.x());
-        double tDeltaY = delta_t(dir.y());
-        double tDeltaZ = delta_t(dir.z());
+            double tDeltaX = delta_t(dir.x());
+            double tDeltaY = delta_t(dir.y());
+            double tDeltaZ = delta_t(dir.z());
 
-        // Guard iterations to avoid pathological infinite loops
-        const int max_iters = std::max(16, 3 + static_cast<int>(std::ceil(dist * inv_voxel) * 3));
-        int iters = 0;
+            // Guard iterations to avoid pathological infinite loops
+            const int max_iters = std::max(16, 3 + static_cast<int>(std::ceil(dist * inv_voxel) * 3));
+            int iters = 0;
 
-        while (!(x == x_end && y == y_end && z == z_end) && iters++ < max_iters) {
-            uint64_t key = pack_voxel(x, y, z);
-            if (key != target_key && points_set.find(key) != points_set.end()) {
-                return true; // occluded
+            while (!(x == x_end && y == y_end && z == z_end) && iters++ < max_iters) {
+                uint64_t key = pack_voxel(x, y, z);
+                if (key != target_key && points_set.find(key) != points_set.end()) {
+                    return true; // occluded
+                }
+
+                // Advance along smallest tMax
+                if (tMaxX < tMaxY) {
+                    if (tMaxX < tMaxZ) {
+                        x += stepX;
+                        tMaxX += tDeltaX;
+                    } else {
+                        z += stepZ;
+                        tMaxZ += tDeltaZ;
+                    }
+                } else {
+                    if (tMaxY < tMaxZ) {
+                        y += stepY;
+                        tMaxY += tDeltaY;
+                    } else {
+                        z += stepZ;
+                        tMaxZ += tDeltaZ;
+                    }
+                }
             }
 
-            // Advance along smallest tMax
-            if (tMaxX < tMaxY) {
-                if (tMaxX < tMaxZ) {
-                    x += stepX;
-                    tMaxX += tDeltaX;
-                } else {
-                    z += stepZ;
-                    tMaxZ += tDeltaZ;
-                }
-            } else {
-                if (tMaxY < tMaxZ) {
-                    y += stepY;
-                    tMaxY += tDeltaY;
-                } else {
-                    z += stepZ;
-                    tMaxZ += tDeltaZ;
-                }
-            }
+            // final check inside target voxel is not necessary (we ignore target voxel)
+            return false;
         }
-
-        // final check inside target voxel is not necessary (we ignore target voxel)
-        return false;
-    }
 
     // --------------------
     // Publishing helpers
