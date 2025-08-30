@@ -4,7 +4,7 @@ import os
 script_dir = os.path.dirname(os.path.abspath(__file__))
 stl_dir = os.path.join(os.path.dirname(script_dir), "stl_models")
 output_dir = script_dir
-voxel_size = 0.05  # Adjust as needed
+voxel_size = 0.1  # Adjust as needed
 
 for fname in os.listdir(stl_dir):
     if not fname.lower().endswith(".stl"):
