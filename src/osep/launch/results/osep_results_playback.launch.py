@@ -27,7 +27,7 @@ def generate_launch_description():
                 {'pyramid_length': 20.0},
                 {'pyramid_width': 20.0},
                 {'pyramid_height': 15.0},
-                {'detection_distance': 20.0}
+                {'detection_distance': 25.0}
             ]
         ),
         Node(
