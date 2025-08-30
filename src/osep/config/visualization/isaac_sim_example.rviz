@@ -15,9 +15,7 @@ Panels:
         - /PointCloud21
         - /PointCloud22
         - /PointCloud23
-        - /PointCloud23/Status1
         - /Marker1
-        - /Marker1/Status1
         - /Marker1/Topic1
       Splitter Ratio: 0.6176470518112183
     Tree Height: 1180
@@ -490,7 +488,7 @@ Visualization Manager:
       Position Transformer: XYZ
       Selectable: true
       Size (Pixels): 3
-      Size (m): 0.25
+      Size (m): 0.10000000149011612
       Style: Boxes
       Topic:
         Depth: 5
@@ -561,7 +559,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 92.49966430664062
+      Distance: 35.17717742919922
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -576,10 +574,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.6997959613800049
+      Pitch: 0.5947961211204529
       Target Frame: camera_link
       Value: Orbit (rviz)
-      Yaw: 2.6941635608673096
+      Yaw: 1.9741604328155518
     Saved: ~
 Window Geometry:
   Color Image:

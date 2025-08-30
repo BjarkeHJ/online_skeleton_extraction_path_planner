@@ -57,15 +57,21 @@ install(
 )
 
 install(
-  PROGRAMS src/publish_sample_pointcloud.py
+  PROGRAMS src/result_processor.py
   DESTINATION lib/${PROJECT_NAME}
-  RENAME cloud_publisher
+  RENAME result_processor
 )
 
 install(
-  PROGRAMS src/publish_stl.py
+  PROGRAMS src/ground_truth_path_saver.py
   DESTINATION lib/${PROJECT_NAME}
-  RENAME stl_pblisher
+  RENAME ground_truth_path_saver
+)
+
+install(
+  PROGRAMS src/ground_truth_republisher.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME ground_truth_republisher
 )
 
 ament_package()

@@ -85,7 +85,7 @@ def generate_launch_description():
                 {"path_topic": TOPIC_NAMES["PATH"]},
                 {"ground_truth_topic": TOPIC_NAMES["GROUND_TRUTH"]},
                 {"viewpoints_adjusted_topic": TOPIC_NAMES["VIEWPOINTS_ADJUSTED"]},
-                {"ground_truth_update_interval": 8000},
+                {"ground_truth_update_interval": 1000},
                 {"safety_distance": SAFETY_DISTANCE},
             ]
         ),
