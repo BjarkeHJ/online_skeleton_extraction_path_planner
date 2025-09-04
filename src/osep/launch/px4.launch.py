@@ -40,6 +40,8 @@ def generate_launch_description():
                 'max_yaw_to_velocity_angle_deg': 120.0,
                 'frequency': 50,
                 'sharp_turn_thresh_deg': 30.0,
+                'max_yaw_speed': 0.30,
+                'max_yaw_acc': 10.0
             }]
-        )
+        ),
     ])

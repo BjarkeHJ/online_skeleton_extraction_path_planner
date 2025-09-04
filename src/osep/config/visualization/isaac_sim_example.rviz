@@ -11,7 +11,6 @@ Panels:
         - /Nvblox1/Nvblox Voxels1
         - /Sensors1
         - /Navigation1
-        - /Navigation1/Path1/Status1
         - /Map1
         - /PointCloud21
       Splitter Ratio: 0.6176470518112183
@@ -475,25 +474,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 211.96966552734375
+      Distance: 355.7238464355469
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 129.11753845214844
-        Y: -12.228235244750977
-        Z: 54.72264862060547
+        X: -24.812355041503906
+        Y: -56.54814529418945
+        Z: 105.7406997680664
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.8297959566116333
+      Pitch: 0.554796040058136
       Target Frame: camera_link
       Value: Orbit (rviz)
-      Yaw: 0.0641619935631752
+      Yaw: 1.5391610860824585
     Saved: ~
 Window Geometry:
   Color Image:
