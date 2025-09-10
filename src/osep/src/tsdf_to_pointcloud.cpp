@@ -249,6 +249,31 @@ sensor_msgs::msg::PointCloud2 TsdfToPointCloudNode::create_static_pointcloud(con
 
 void TsdfToPointCloudNode::callback(const nvblox_msgs::msg::VoxelBlockLayer::SharedPtr msg)
 {
+  static size_t last_white_point_count_ = 0;
+  static sensor_msgs::msg::PointCloud2 last_static_msg;
+  static int callback_counter = 0;
+
+  bool has_points = false;
+  for (const auto& block : msg->blocks) {
+      if (!block.centers.empty()) {
+          has_points = true;
+          break;
+      }
+  }
+
+  if (!has_points) {
+      // Publish at least every 2nd callback if we have a static cloud
+      if (last_static_msg.data.size() > 0) {
+          callback_counter++;
+          if (callback_counter >= 2) {
+              static_pub_->publish(last_static_msg);
+              callback_counter = 0;
+          }
+      }
+      return;
+  }
+
+  // If we get here, the message has points!
   std::unordered_map<std::tuple<int, int, int>, ColoredPoint> current_points;
 
   // 1. Create and publish colored pointcloud
@@ -265,18 +290,18 @@ void TsdfToPointCloudNode::callback(const nvblox_msgs::msg::VoxelBlockLayer::Sha
           ++current_white_points;
       }
   }
-  static size_t last_white_point_count_ = 0;
-  static sensor_msgs::msg::PointCloud2 last_static_msg;
 
   if (current_white_points > last_white_point_count_) {
       morphological_closing_3d(voxel_size_, std::floor(cavity_fill_diameter_ / (2 * voxel_size_)));
       last_white_point_count_ = current_white_points;
       last_static_msg = create_static_pointcloud(msg->header);
-      static_pub_->publish(last_static_msg);
-  } else if (last_static_msg.data.size() > 0) {
-      // Just re-publish the last static message
+  }
+
+  // Always publish static cloud if we have points
+  if (last_static_msg.data.size() > 0) {
       static_pub_->publish(last_static_msg);
   }
+  callback_counter = 0; // reset counter since we published due to new data
 }
 
 int main(int argc, char ** argv)
