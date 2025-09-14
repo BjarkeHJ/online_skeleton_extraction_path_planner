@@ -68,6 +68,8 @@ class TestFlight(Node):
         self.vehicle_odometry = Odometry()
 
         # Initialize variables
+        self.prev_distance_to_target = float('inf')
+        self.reach_threshold = 2.0  # Distance threshold to consider a point "reached"
         self.offboard_setpoint_counter = 0
         self.vehicle_status = VehicleStatus()
         self.takeoff_height = -5.0
@@ -81,8 +83,6 @@ class TestFlight(Node):
 
         # Create a timer to publish control commands
         self.timer = self.create_timer(0.05, self.timer_callback)
-        self.last_update_time = time.time()  # Initialize the last update time
-        self.update_cooldown = 1.0  # Cooldown period in seconds (adjust as needed)
 
     def adjust_waypoints_callback(self, waypoints_adjusted):
         new_coordinates = []
@@ -136,27 +136,23 @@ class TestFlight(Node):
 
     def update_coordinates(self) -> None:
         """Check if the vehicle is close to any point in the coordinates_to_vist vector."""
-        current_time = time.time()
-        if current_time - self.last_update_time < self.update_cooldown:
-            # Skip update if cooldown period hasn't passed
-            return
 
         current = np.array([
             self.vehicle_odometry.pose.pose.position.x,
             self.vehicle_odometry.pose.pose.position.y,
             self.vehicle_odometry.pose.pose.position.z,
         ])
+        target = np.array(self.coordinates_to_vist[0])
+        dist_to_target = np.linalg.norm(current - target)
 
-        for i, target in enumerate(self.coordinates_to_vist):
-            target = np.array(target)
-            distance = np.linalg.norm(current - target)
-            self.get_logger().info(f"Distance to point {i}: {distance}")
-
-            if distance < 1.0:  # Threshold for being "close"
-                self.get_logger().info(f"Reached point {i}: {target}")
-                self.current_checkpoint += i+1  # Update checkpoint to the next point
-                self.last_update_time = current_time  # Update the last update time
-                break
+        if dist_to_target > self.prev_distance_to_target:
+            self.get_logger().info("Target reached, moving to next point.")
+            self.current_checkpoint += 1
+            self.prev_distance_to_target = float('inf')  # Reset for the next point
+        
+        elif dist_to_target < self.reach_threshold:
+            self.get_logger().info(f"Reached point distance to target: {dist_to_target}")
+            self.prev_distance_to_target = dist_to_target
 
     def timer_callback(self) -> None:
         self.publish_path()
