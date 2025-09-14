@@ -44,6 +44,23 @@ install(TARGETS static_pointcloud_postprocessor_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
+add_executable(tsdf_skeleton_node src/tsdf_skeleton.cpp)
+target_include_directories(tsdf_skeleton_node PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+  ${PCL_INCLUDE_DIRS}
+)
+target_link_libraries(tsdf_skeleton_node ${PCL_LIBRARIES})
+ament_target_dependencies(tsdf_skeleton_node
+  rclcpp
+  sensor_msgs
+  pcl_conversions
+  pcl_ros
+)
+install(TARGETS tsdf_skeleton_node
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 add_executable(result_displayer_node src/result_displayer.cpp)
 target_include_directories(result_displayer_node PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -91,4 +108,11 @@ install(
   DESTINATION lib/${PROJECT_NAME}
   RENAME static_tf_publisher
 )
+
+install(
+  PROGRAMS src/test_flight.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME test_flight
+)
+
 ament_package()
