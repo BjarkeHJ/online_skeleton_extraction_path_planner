@@ -13,7 +13,7 @@ class CloudSaver(Node):
         super().__init__('cloud_saver')
 
         # Declare parameters
-        self.declare_parameter('topic_name', '/your/pointcloud/topic')
+        self.declare_parameter('topic_name', '/osep/tsdf/static_pointcloud')
         self.declare_parameter('filename', 'static_cloud.pcd')
         topic = self.get_parameter('topic_name').get_parameter_value().string_value
         filename = self.get_parameter('filename').get_parameter_value().string_value
