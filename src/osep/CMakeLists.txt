@@ -108,4 +108,11 @@ install(
   DESTINATION lib/${PROJECT_NAME}
   RENAME static_tf_publisher
 )
+
+install(
+  PROGRAMS src/test_flight.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME test_flight
+)
+
 ament_package()
