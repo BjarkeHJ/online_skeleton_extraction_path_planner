@@ -59,7 +59,7 @@ class Skeletonizer:
                 int(np.floor(y / self.super_voxel_size)),
                 int(np.floor(z / self.super_voxel_size)))
 
-    def _full_dilation(self, points, dilation_voxels=1):
+    def full_dilation(self, points, dilation_voxels=1):
         """
         Perform full 3D dilation: for each point, add all neighbors within dilation_voxels in each axis.
         Returns unique set of dilated points.
@@ -541,7 +541,7 @@ class RealTimeSkeletonizerNode(Node):
             self.get_logger().warn("Received empty point cloud after filtering.")
             return
 
-        dilated_points = self.skel._full_dilation(points, dilation_voxels=1)
+        dilated_points = self.skel.full_dilation(points, dilation_voxels=1)
         labels, dilated_labels, best_k = self.skel.cluster_detection(points, dilated_points, min_cluster_size=50)
         raw_edge_points, raw_edge_clusters, raw_centroids = self.skel.extract_edges_and_centroids(points, labels, best_k)
         merged_edge_points, merged_clusters = self.skel.merge_points_within_clusters(raw_edge_points, raw_edge_clusters, points)
