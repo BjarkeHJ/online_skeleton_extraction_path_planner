@@ -226,7 +226,8 @@ class RealTimeSkeletonizerNode(Node):
         self.centroids_pub = self.create_publisher(PointCloud2, self.output_topic + "/centroids", 1)
 
         self.last_point_count = 0
-        self.last_msg = None
+        self.last_skeleton_msg = None
+        self.last_centroids_msg = None
 
     def callback(self, msg):
         points = np.asarray(list(pc2.read_points(msg, field_names=("x", "y", "z"), skip_nans=True)))
@@ -237,8 +238,13 @@ class RealTimeSkeletonizerNode(Node):
             return
 
         # Early return if point count matches last published
-        if points.shape[0] == self.last_point_count and self.last_msg is not None:
-            self.centroids_pub.publish(self.last_msg)
+        if (
+            points.shape[0] == self.last_point_count
+            and self.last_centroids_msg is not None
+            and self.last_skeleton_msg is not None
+        ):
+            self.centroids_pub.publish(self.last_centroids_msg)
+            self.skeleton_pub.publish(self.last_skeleton_msg)
             return
 
         labels, best_k, _ = self.skel.cluster_detection(points)
@@ -280,7 +286,7 @@ class RealTimeSkeletonizerNode(Node):
             pc2_msg = pc2.create_cloud(header, fields, structured_combined)
             self.centroids_pub.publish(pc2_msg)
             self.last_point_count = points.shape[0]
-            self.last_msg = pc2_msg
+            self.last_centroids_msg = pc2_msg
             self.get_logger().info(f"Published {len(raw_edge_points)} edge points and {len(raw_centroids)} centroids.")
 
         # Publish densified skeleton with unique color per cluster
@@ -311,6 +317,7 @@ class RealTimeSkeletonizerNode(Node):
             header = msg.header
             skel_msg = pc2.create_cloud(header, fields, structured_skel)
             self.skeleton_pub.publish(skel_msg)
+            self.last_skeleton_msg = skel_msg
             self.get_logger().info(f"Published densified skeleton with {all_skel_points.shape[0]} points.")
 
 def main(args=None):
