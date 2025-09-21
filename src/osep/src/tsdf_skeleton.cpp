@@ -7,6 +7,12 @@
 #include <tuple>
 #include <cmath>
 #include <string>
+#include <opencv2/core.hpp>
+#include <opencv2/ml.hpp>
+#include <pcl/point_types.h>
+#include <pcl/point_cloud.h>
+#include <pcl_conversions/pcl_conversions.h>
+#include <random>
 
 class StaticTSDFPostprocessNode : public rclcpp::Node {
 public:
@@ -58,83 +64,103 @@ private:
             return;
         }
 
-        // 1. Build supervoxel population map (with double voxel size)
-        double super_voxel_size = 4.0 * voxel_size_;
-        std::map<std::tuple<int,int,int>, int> supervoxel_counts;
-        for (const auto& pt : cloud->points) {
-            auto v = quantize(pt.x, pt.y, pt.z, super_voxel_size);
-            supervoxel_counts[v]++;
-        }
-
-        // 2. Compute weighted centroid
-        Eigen::Vector3f centroid(0, 0, 0);
-        float total_weight = 0.0f;
-        for (const auto& pt : cloud->points) {
-            auto v = quantize(pt.x, pt.y, pt.z, super_voxel_size);
-            float weight = 1.0f / static_cast<float>(supervoxel_counts[v]);
-            centroid += weight * Eigen::Vector3f(pt.x, pt.y, pt.z);
-            total_weight += weight;
-        }
-        if (total_weight > 0.0f) {
-            centroid /= total_weight;
-        } else {
-            centroid.setZero();
-        }
-
-        // 3. Compute distances from centroid and store with index
-        std::vector<std::pair<size_t, float>> idx_dist;
+        // Convert to OpenCV matrix
+        cv::Mat data(cloud->points.size(), 3, CV_32F);
         for (size_t i = 0; i < cloud->points.size(); ++i) {
-            Eigen::Vector3f vec = Eigen::Vector3f(cloud->points[i].x, cloud->points[i].y, cloud->points[i].z) - centroid;
-            idx_dist.emplace_back(i, vec.norm());
+            data.at<float>(i, 0) = cloud->points[i].x;
+            data.at<float>(i, 1) = cloud->points[i].y;
+            data.at<float>(i, 2) = cloud->points[i].z;
         }
 
-        // 4. Sort by distance descending
-        std::sort(idx_dist.begin(), idx_dist.end(),
-                [](const auto& a, const auto& b) { return a.second > b.second; });
+        // GMM clustering using OpenCV EM with elbow detection
+        int max_clusters = 20;
+        double threshold = 0.01; // 1% relative improvement cutoff
+        std::vector<double> bics;
+        std::vector<cv::Ptr<cv::ml::EM>> models;
+        int elbow_idx = -1;
+        int best_k = 1;
+        double best_bic = std::numeric_limits<double>::max();
+        std::vector<int> best_labels;
+        cv::Ptr<cv::ml::EM> best_em;
 
-        // 5. Select up to 20 points with unique directions and min distance from centroid
-        std::vector<size_t> selected_indices;
-        std::vector<Eigen::Vector3f> selected_dirs;
-        const float dot_threshold = 0.8f; // adjust for angular separation
-        const float min_dist = 10.0f * voxel_size_; // minimum distance from centroid
+        for (int k = 1; k <= max_clusters; ++k) {
+            auto em = cv::ml::EM::create();
+            em->setClustersNumber(k);
+            em->setCovarianceMatrixType(cv::ml::EM::COV_MAT_GENERIC);
+            em->setTermCriteria(cv::TermCriteria(cv::TermCriteria::COUNT + cv::TermCriteria::EPS, 100, 0.1));
+            cv::Mat labels;
+            em->trainEM(data, cv::noArray(), labels, cv::noArray());
 
-        for (const auto& [idx, dist] : idx_dist) {
-            if (dist < min_dist) continue; // skip points too close to centroid
-            Eigen::Vector3f dir = Eigen::Vector3f(cloud->points[idx].x, cloud->points[idx].y, cloud->points[idx].z) - centroid;
-            if (dir.norm() == 0) continue;
-            dir.normalize();
-            bool too_close = false;
-            for (const auto& sel_dir : selected_dirs) {
-                if (dir.dot(sel_dir) > dot_threshold) {
-                    too_close = true;
+            // Correct log-likelihood calculation
+            double log_likelihood = 0.0;
+            cv::Mat probs;
+            for (int i = 0; i < data.rows; ++i) {
+                cv::Vec2d result = em->predict2(data.row(i), probs);
+                log_likelihood += result[0];
+            }
+
+            int n_params = k * (3 + 3 * (3 + 1) / 2); // mean + cov for each cluster
+            double bic = -2 * log_likelihood + n_params * std::log(data.rows);
+
+            bics.push_back(bic);
+            models.push_back(em);
+
+            RCLCPP_INFO(this->get_logger(), "k=%d, BIC=%.2f, log_likelihood=%.2f", k, bic, log_likelihood);
+
+            if (k > 1) {
+                double improvement = -(bics.back() - bics[bics.size() - 2]) / std::abs(bics[bics.size() - 2]);
+                if (improvement < threshold) {
+                    elbow_idx = k - 1;
+                    RCLCPP_INFO(this->get_logger(), "Elbow found at k=%d (improvement=%.4f < %.2f)", elbow_idx, improvement, threshold);
                     break;
                 }
             }
-            if (!too_close) {
-                selected_indices.push_back(idx);
-                selected_dirs.push_back(dir);
-                if (selected_indices.size() >= 20) break;
-            }
         }
 
-        // 6. Create a point cloud of the selected points and add the centroid
-        pcl::PointCloud<pcl::PointXYZ>::Ptr extrem_cloud(new pcl::PointCloud<pcl::PointXYZ>);
-        for (size_t idx : selected_indices) {
-            extrem_cloud->points.push_back(cloud->points[idx]);
+        if (elbow_idx == -1) {
+            // No elbow found, pick k with minimum BIC
+            elbow_idx = std::min_element(bics.begin(), bics.end()) - bics.begin() + 1;
         }
-        // Add the centroid as a point
-        pcl::PointXYZ centroid_pt;
-        centroid_pt.x = centroid.x();
-        centroid_pt.y = centroid.y();
-        centroid_pt.z = centroid.z();
-        extrem_cloud->points.push_back(centroid_pt);
+        best_k = elbow_idx;
+        best_em = models[best_k - 1];
 
-        extrem_cloud->width = extrem_cloud->points.size();
-        extrem_cloud->height = 1;
-        extrem_cloud->is_dense = true;
+        // Get labels for best_k
+        cv::Mat labels;
+        best_em->trainEM(data, cv::noArray(), labels, cv::noArray());
+        best_labels.resize(labels.rows);
+        for (int i = 0; i < labels.rows; ++i) {
+            best_labels[i] = labels.at<int>(i, 0);
+        }
+
+        RCLCPP_INFO(this->get_logger(), "Optimal number of clusters: %d", best_k);
+
+        // Assign colors to clusters
+        std::vector<cv::Vec3b> colors(best_k);
+        std::mt19937 rng(42);
+        std::uniform_int_distribution<int> dist(0, 255);
+        for (int i = 0; i < best_k; ++i) {
+            colors[i] = cv::Vec3b(dist(rng), dist(rng), dist(rng));
+        }
+
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr colored_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
+        colored_cloud->header = cloud->header;
+        for (size_t i = 0; i < cloud->points.size(); ++i) {
+            pcl::PointXYZRGB pt;
+            pt.x = cloud->points[i].x;
+            pt.y = cloud->points[i].y;
+            pt.z = cloud->points[i].z;
+            int label = best_labels[i];
+            pt.r = colors[label][0];
+            pt.g = colors[label][1];
+            pt.b = colors[label][2];
+            colored_cloud->points.push_back(pt);
+        }
+        colored_cloud->width = colored_cloud->points.size();
+        colored_cloud->height = 1;
+        colored_cloud->is_dense = true;
 
         sensor_msgs::msg::PointCloud2 output;
-        pcl::toROSMsg(*extrem_cloud, output);
+        pcl::toROSMsg(*colored_cloud, output);
         output.header = msg->header;
         pub_->publish(output);
 

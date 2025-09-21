@@ -10,6 +10,14 @@ find_package(nav_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
 find_package(pcl_conversions REQUIRED)
 find_package(pcl_ros REQUIRED)
+
+find_package(OpenCV REQUIRED)
+
+include_directories(
+  include
+  ${OpenCV_INCLUDE_DIRS}
+)
+
 ament_auto_find_build_dependencies()
 
 add_executable(tsdf_to_pointcloud_node src/tsdf_to_pointcloud.cpp)
@@ -49,8 +57,9 @@ target_include_directories(tsdf_skeleton_node PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
   ${PCL_INCLUDE_DIRS}
+  ${OpenCV_INCLUDE_DIRS}
 )
-target_link_libraries(tsdf_skeleton_node ${PCL_LIBRARIES})
+target_link_libraries(tsdf_skeleton_node ${PCL_LIBRARIES} ${OpenCV_LIBS})
 ament_target_dependencies(tsdf_skeleton_node
   rclcpp
   sensor_msgs
