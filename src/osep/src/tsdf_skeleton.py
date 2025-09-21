@@ -43,7 +43,11 @@ class Skeletonizer:
         # Only keep clusters with enough points
         large_clusters = labels[counts >= min_cluster_size]
         mask = np.isin(db.labels_, large_clusters)
-        return points[mask]
+        filtered_points = points[mask]
+        removed = len(points) - len(filtered_points)
+        if removed > 0:
+            print(f"Filtered out {removed} lonely points (remaining: {len(filtered_points)})")
+        return filtered_points
 
     def _quantize(self, x, y, z):
         return (int(np.floor(x / self.super_voxel_size)),
@@ -72,7 +76,7 @@ class Skeletonizer:
         best_gmm = models[best_k - 1]
         labels = best_gmm.predict(points)
         print(f"Cluster sizes: {np.bincount(labels)}")
-        return labels, best_k, best_gmm
+        return labels, best_k
     
     def extract_edges_and_centroids(self, points, labels, best_k):
         raw_edge_points = []
@@ -417,7 +421,7 @@ class RealTimeSkeletonizerNode(Node):
         points = np.asarray(list(pc2.read_points(msg, field_names=("x", "y", "z"), skip_nans=True)))
         if points.dtype.fields is not None:
             points = np.stack([points['x'], points['y'], points['z']], axis=-1)
-        points = self.skel.filter_lonely_points(points, min_cluster_size=30, eps_factor=5.0)
+        points = self.skel.filter_lonely_points(points, min_cluster_size=100, eps_factor=5.0)
         if len(points) == 0:
             self.get_logger().warn("Received empty point cloud after filtering.")
             return
@@ -432,7 +436,7 @@ class RealTimeSkeletonizerNode(Node):
             self.skeleton_pub.publish(self.last_skeleton_msg)
             return
 
-        labels, best_k, _ = self.skel.cluster_detection(points)
+        labels, best_k = self.skel.cluster_detection(points)
         raw_edge_points, raw_edge_clusters, raw_centroids = self.skel.extract_edges_and_centroids(points, labels, best_k)
         merged_edge_points, merged_clusters = self.skel.merge_points_within_clusters(raw_edge_points, raw_edge_clusters, points)
         densified = self.skel.densify_skeleton(merged_edge_points, merged_clusters, points, labels, max_dist=5)
