@@ -26,6 +26,13 @@ class Skeletonizer:
         self.min_dist_factor = min_dist_factor
         self.max_clusters = max_clusters
         self.merge_radius_factor = merge_radius_factor
+
+        self.last_k = None
+        self.k_stability_counter = 0
+        self.k_stable_epochs = 0
+        self.k_min_switch = 2
+        self.k_max_switch = 20
+        self.k_hysteresis_factor = 0.2
      
     def filter_lonely_points(self, points, min_cluster_size=10, eps_factor=3.0):
         """
@@ -70,10 +77,37 @@ class Skeletonizer:
         dilated_unique = np.unique(dilated, axis=0)
         return dilated_unique
 
+    def _update_stable_k(self, detected_k):
+        """
+        Dynamic hysteresis for stable cluster count selection.
+        Returns the stable cluster count to use.
+        """
+        if self.last_k is None:
+            self.last_k = detected_k
+            self.k_stability_counter = 0
+            self.k_stable_epochs = 1
+        elif detected_k == self.last_k:
+            self.k_stability_counter = 0
+            self.k_stable_epochs += 1
+        else:
+            self.k_stability_counter += 1
+            dynamic_threshold = min(
+                self.k_max_switch,
+                max(self.k_min_switch, int(self.k_hysteresis_factor * self.k_stable_epochs))
+            )
+            if self.k_stability_counter >= dynamic_threshold:
+                print(f"Switching cluster count from {self.last_k} to {detected_k} after {self.k_stability_counter} consecutive detections (threshold was {dynamic_threshold})")
+                self.last_k = detected_k
+                self.k_stable_epochs = 1
+                self.k_stability_counter = 0
+
+        print(f"Stable cluster count: {self.last_k} (detected: {detected_k}, stable_epochs: {self.k_stable_epochs}, switch_counter: {self.k_stability_counter})")
+        return self.last_k
+
     def cluster_detection(self, points, dilated_points, min_cluster_size=50):
         print("🔄 Fitting GMM models (iterative elbow detection)...")
         bics, models = [], []
-        threshold = 0.02  # 2% relative improvement cutoff
+        threshold = 0.01  # 1% relative improvement cutoff
         elbow_idx = None
         for k in range(1, self.max_clusters + 1):
             gmm = GaussianMixture(n_components=k, covariance_type="full", random_state=42)
@@ -89,7 +123,14 @@ class Skeletonizer:
         if elbow_idx is None:
             elbow_idx = int(np.argmin(bics)) + 1
         bics = np.array(bics)
-        best_k = elbow_idx
+        detected_k = elbow_idx
+        best_k = self._update_stable_k(detected_k)
+        # Clamp best_k to available models
+        if best_k > len(models):
+            print(f"Warning: best_k={best_k} > fitted models ({len(models)}). Clamping.")
+            best_k = len(models)
+        if best_k < 1:
+            best_k = 1
         best_gmm = models[best_k - 1]
 
         # Assign labels for both original and dilated points
@@ -496,8 +537,10 @@ class RealTimeSkeletonizerNode(Node):
             self.centroids_pub.publish(self.last_centroids_msg)
             self.skeleton_pub.publish(self.last_skeleton_msg)
             return
+        else:
+            self.last_point_count = points.shape[0]
 
-        points = self.skel.filter_lonely_points(points, min_cluster_size=100, eps_factor=5.0)
+        points = self.skel.filter_lonely_points(points, min_cluster_size=50, eps_factor=5.0)
         if len(points) == 0:
             self.get_logger().warn("Received empty point cloud after filtering.")
             return
@@ -515,6 +558,12 @@ class RealTimeSkeletonizerNode(Node):
         )
 
         # Combine edge points and centroids
+       # Before combining edge points and centroids in callback:
+        if merged_edge_points.size == 0:
+            merged_edge_points = np.empty((0, 3))
+        if raw_centroids.size == 0:
+            raw_centroids = np.empty((0, 3))
+
         combined_points = np.vstack([merged_edge_points, raw_centroids])
         edge_rgb = np.array([255, 0, 0], dtype=np.uint8)
         centroid_rgb = np.array([0, 128, 255], dtype=np.uint8)
@@ -528,9 +577,8 @@ class RealTimeSkeletonizerNode(Node):
             pc2_msg = self.publish_pointcloud(
                 combined_points, combined_colors, msg.header, self.centroids_pub
             )
-            self.last_point_count = points.shape[0]
             self.last_centroids_msg = pc2_msg
-            self.get_logger().info(f"Published {len(raw_edge_points)} edge points and {len(raw_centroids)} centroids.")
+            # self.get_logger().info(f"Published {len(raw_edge_points)} edge points and {len(raw_centroids)} centroids.")
 
         # Publish densified skeleton with unique color per cluster
         if extended_densified:
@@ -546,7 +594,7 @@ class RealTimeSkeletonizerNode(Node):
                 all_skel_points, all_skel_colors, msg.header, self.skeleton_pub
             )
             self.last_skeleton_msg = skel_msg
-            self.get_logger().info(f"Published densified skeleton with {all_skel_points.shape[0]} points.")
+            # self.get_logger().info(f"Published densified skeleton with {all_skel_points.shape[0]} points.")
 
 def main(args=None):
     rclpy.init(args=args)
