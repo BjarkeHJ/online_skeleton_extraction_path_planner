@@ -82,15 +82,24 @@ class Skeletonizer:
         Dynamic hysteresis for stable cluster count selection.
         Returns the stable cluster count to use.
         """
+        if not hasattr(self, "previous_k"):
+            self.previous_k = None
+
         if self.last_k == 0:
             self.last_k = detected_k
             self.k_stability_counter = 0
             self.k_stable_epochs = 1
+            self.previous_k = detected_k
         elif detected_k == self.last_k:
             self.k_stability_counter = 0
             self.k_stable_epochs += 1
+            self.previous_k = detected_k
         else:
-            self.k_stability_counter += 1
+            if detected_k == self.previous_k:
+                self.k_stability_counter += 1
+            else:
+                self.k_stability_counter = 1
+                self.previous_k = detected_k
             dynamic_threshold = min(
                 self.k_max_switch,
                 max(self.k_min_switch, int(self.k_hysteresis_factor * self.k_stable_epochs))
