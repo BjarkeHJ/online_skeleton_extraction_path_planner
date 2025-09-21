@@ -70,15 +70,8 @@ class Skeletonizer:
         dilated_unique = np.unique(dilated, axis=0)
         return dilated_unique
 
-    def cluster_detection(self, points, dilation_voxels=1, min_cluster_size=50):
+    def cluster_detection(self, points, dilated_points, min_cluster_size=50):
         print("🔄 Fitting GMM models (iterative elbow detection)...")
-        # 1. Dilation for GMM fitting only
-        if dilation_voxels > 0:
-            dilated_points = self._full_dilation(points, dilation_voxels)
-            print(f"Applied full dilation with {dilation_voxels} voxels. Dilation points: {len(dilated_points)}")
-        else:
-            dilated_points = points
-
         bics, models = [], []
         threshold = 0.02  # 2% relative improvement cutoff
         elbow_idx = None
@@ -99,10 +92,11 @@ class Skeletonizer:
         best_k = elbow_idx
         best_gmm = models[best_k - 1]
 
-        # 2. Assign each original point to the nearest GMM component
+        # Assign labels for both original and dilated points
         labels = best_gmm.predict(points)
+        dilated_labels = best_gmm.predict(dilated_points)
 
-        # 3. Optionally: split each cluster into connected components (on original points)
+        # Optionally: split each cluster into connected components (on original points)
         final_labels = np.full_like(labels, -1)
         next_label = 0
         for k in range(best_k):
@@ -115,7 +109,6 @@ class Skeletonizer:
                 sub_mask = (sub_labels == sub)
                 cluster_indices = np.where(mask)[0][sub_mask]
                 if len(cluster_indices) < min_cluster_size:
-                    # Too small, skip (leave as -1)
                     continue
                 final_labels[cluster_indices] = next_label
                 next_label += 1
@@ -123,7 +116,7 @@ class Skeletonizer:
         best_k = next_label
 
         print(f"Cluster sizes: {np.bincount(labels[labels >= 0])}")
-        return labels, best_k
+        return labels, dilated_labels, best_k
 
     def extract_edges_and_centroids(self, points, labels, best_k):
         raw_edge_points = []
@@ -461,6 +454,33 @@ class RealTimeSkeletonizerNode(Node):
     def pack_rgb(r, g, b):
         rgb_uint32 = (int(r) << 16) | (int(g) << 8) | int(b)
         return np.frombuffer(np.uint32(rgb_uint32).tobytes(), dtype=np.float32)[0]
+    
+    def pack_points_with_colors(self, points, colors):
+        """Pack points and uint8 RGB colors into a structured array for PointCloud2."""
+        structured = np.zeros(points.shape[0], dtype=[
+            ('x', np.float32), ('y', np.float32), ('z', np.float32),
+            ('rgb', np.float32)
+        ])
+        structured['x'] = points[:, 0]
+        structured['y'] = points[:, 1]
+        structured['z'] = points[:, 2]
+        structured['rgb'] = [self.pack_rgb(*c) for c in colors]
+        return structured
+
+    def publish_pointcloud(self, points, colors, header, publisher):
+        """Create and publish a PointCloud2 message from points and colors."""
+        if points.shape[0] == 0:
+            return
+        structured = self.pack_points_with_colors(points, colors)
+        fields = [
+            PointField(name='x', offset=0, datatype=PointField.FLOAT32, count=1),
+            PointField(name='y', offset=4, datatype=PointField.FLOAT32, count=1),
+            PointField(name='z', offset=8, datatype=PointField.FLOAT32, count=1),
+            PointField(name='rgb', offset=12, datatype=PointField.FLOAT32, count=1),
+        ]
+        pc2_msg = pc2.create_cloud(header, fields, structured)
+        publisher.publish(pc2_msg)
+        return pc2_msg
 
     def callback(self, msg):
         points = np.asarray(list(pc2.read_points(msg, field_names=("x", "y", "z"), skip_nans=True)))
@@ -482,10 +502,11 @@ class RealTimeSkeletonizerNode(Node):
             self.get_logger().warn("Received empty point cloud after filtering.")
             return
 
-        labels, best_k = self.skel.cluster_detection(points, dilation_voxels=1, min_cluster_size=50)
+        dilated_points = self.skel._full_dilation(points, dilation_voxels=1)
+        labels, dilated_labels, best_k = self.skel.cluster_detection(points, dilated_points, min_cluster_size=50)
         raw_edge_points, raw_edge_clusters, raw_centroids = self.skel.extract_edges_and_centroids(points, labels, best_k)
         merged_edge_points, merged_clusters = self.skel.merge_points_within_clusters(raw_edge_points, raw_edge_clusters, points)
-        densified = self.skel.densify_skeleton(merged_edge_points, merged_clusters, points, labels, max_dist=5)
+        densified = self.skel.densify_skeleton(merged_edge_points, merged_clusters, dilated_points, dilated_labels, max_dist=5)
         merged_densified, updated_merged_edge_points, updated_merged_clusters = self.skel.merge_skeleton_points(
             densified, merged_edge_points, merged_clusters
         )
@@ -504,24 +525,9 @@ class RealTimeSkeletonizerNode(Node):
 
         # Publish edge points and centroids (combined)
         if combined_points.shape[0] > 0:
-            structured_combined = np.zeros(combined_points.shape[0], dtype=[
-                ('x', np.float32), ('y', np.float32), ('z', np.float32),
-                ('rgb', np.float32)
-            ])
-            structured_combined['x'] = combined_points[:, 0]
-            structured_combined['y'] = combined_points[:, 1]
-            structured_combined['z'] = combined_points[:, 2]
-            structured_combined['rgb'] = [self.pack_rgb(*c) for c in combined_colors]
-
-            fields = [
-                PointField(name='x', offset=0, datatype=PointField.FLOAT32, count=1),
-                PointField(name='y', offset=4, datatype=PointField.FLOAT32, count=1),
-                PointField(name='z', offset=8, datatype=PointField.FLOAT32, count=1),
-                PointField(name='rgb', offset=12, datatype=PointField.FLOAT32, count=1),
-            ]
-            header = msg.header
-            pc2_msg = pc2.create_cloud(header, fields, structured_combined)
-            self.centroids_pub.publish(pc2_msg)
+            pc2_msg = self.publish_pointcloud(
+                combined_points, combined_colors, msg.header, self.centroids_pub
+            )
             self.last_point_count = points.shape[0]
             self.last_centroids_msg = pc2_msg
             self.get_logger().info(f"Published {len(raw_edge_points)} edge points and {len(raw_centroids)} centroids.")
@@ -536,23 +542,9 @@ class RealTimeSkeletonizerNode(Node):
                 all_skel_colors.append(np.tile(color_map[k], (pts.shape[0], 1)))
             all_skel_points = np.vstack(all_skel_points)
             all_skel_colors = np.vstack(all_skel_colors)
-            structured_skel = np.zeros(all_skel_points.shape[0], dtype=[
-                ('x', np.float32), ('y', np.float32), ('z', np.float32),
-                ('rgb', np.float32)
-            ])
-            structured_skel['x'] = all_skel_points[:, 0]
-            structured_skel['y'] = all_skel_points[:, 1]
-            structured_skel['z'] = all_skel_points[:, 2]
-            structured_skel['rgb'] = [self.pack_rgb(*c) for c in all_skel_colors]
-            fields = [
-                PointField(name='x', offset=0, datatype=PointField.FLOAT32, count=1),
-                PointField(name='y', offset=4, datatype=PointField.FLOAT32, count=1),
-                PointField(name='z', offset=8, datatype=PointField.FLOAT32, count=1),
-                PointField(name='rgb', offset=12, datatype=PointField.FLOAT32, count=1),
-            ]
-            header = msg.header
-            skel_msg = pc2.create_cloud(header, fields, structured_skel)
-            self.skeleton_pub.publish(skel_msg)
+            skel_msg = self.publish_pointcloud(
+                all_skel_points, all_skel_colors, msg.header, self.skeleton_pub
+            )
             self.last_skeleton_msg = skel_msg
             self.get_logger().info(f"Published densified skeleton with {all_skel_points.shape[0]} points.")
 
