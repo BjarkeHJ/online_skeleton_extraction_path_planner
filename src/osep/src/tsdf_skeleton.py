@@ -10,6 +10,7 @@ import numpy as np
 from sklearn.cluster import DBSCAN
 from scipy.sparse.csgraph import minimum_spanning_tree
 from sklearn.mixture import GaussianMixture
+from sklearn.neighbors import NearestNeighbors
 import sensor_msgs_py.point_cloud2 as pc2
 import matplotlib.pyplot as plt
 
@@ -214,6 +215,158 @@ class Skeletonizer:
                 densified[k] = np.array(list(skel_points))
         
         return densified
+
+    def _identify_edge_points_in_skeleton(self, skeleton_points, merged_edge_points, tol=1e-3):
+        """
+        Identify which skeleton points are original edge points
+        """
+        if len(skeleton_points) == 0 or len(merged_edge_points) == 0:
+            return np.zeros(len(skeleton_points), dtype=bool)
+        
+        # Find nearest edge point for each skeleton point
+        nn = NearestNeighbors(n_neighbors=1)
+        nn.fit(merged_edge_points)
+        distances, _ = nn.kneighbors(skeleton_points)
+        
+        # Points that are very close to an edge point are considered edge points
+        return distances.flatten() < tol
+    
+    def merge_skeleton_points(self, densified, merged_edge_points, merged_clusters):
+        """
+        Merge edge points in the skeleton, including those from different clusters if nearby
+        Returns: merged_densified, updated_merged_edge_points, updated_merged_clusters
+        """
+        from sklearn.cluster import DBSCAN
+        
+        merged_densified = {}
+        
+        # First, collect ALL edge points from all clusters with their cluster associations
+        all_edge_points = []
+        all_edge_clusters = []
+        point_to_original_clusters = {}  # Track which clusters each point belongs to
+        
+        for k, skel_pts in densified.items():
+            if len(skel_pts) < 2:
+                merged_densified[k] = skel_pts
+                continue
+            
+            # Identify which skeleton points are original edge points
+            cluster_edge_idxs = [i for i, clist in enumerate(merged_clusters) if k in clist]
+            cluster_edge_pts = merged_edge_points[cluster_edge_idxs] if cluster_edge_idxs else np.array([])
+            
+            edge_mask = self._identify_edge_points_in_skeleton(skel_pts, cluster_edge_pts)
+            edge_points = skel_pts[edge_mask]
+            
+            # Store edge points with their cluster information
+            for pt in edge_points:
+                pt_tuple = tuple(pt)
+                all_edge_points.append(pt)
+                all_edge_clusters.append([k])  # Start with single cluster
+                
+                # Track which clusters this point originally belongs to
+                if pt_tuple not in point_to_original_clusters:
+                    point_to_original_clusters[pt_tuple] = set()
+                point_to_original_clusters[pt_tuple].add(k)
+        
+        if not all_edge_points:
+            return densified, merged_edge_points, merged_clusters
+        
+        # Merge ALL edge points regardless of cluster (including inter-cluster merging)
+        all_edge_points = np.array(all_edge_points)
+        db = DBSCAN(eps=self.merge_radius_factor * self.voxel_size, min_samples=1).fit(all_edge_points)
+        
+        updated_merged_edge_points = []
+        updated_merged_clusters = []
+        
+        # Process each merged group
+        for label in np.unique(db.labels_):
+            group_indices = np.where(db.labels_ == label)[0]
+            group_points = all_edge_points[group_indices]
+            
+            # Merge the points
+            merged_point = np.mean(group_points, axis=0)
+            updated_merged_edge_points.append(merged_point)
+            
+            # Combine cluster associations from all points in this group
+            merged_cluster_set = set()
+            for idx in group_indices:
+                pt_tuple = tuple(all_edge_points[idx])
+                if pt_tuple in point_to_original_clusters:
+                    merged_cluster_set.update(point_to_original_clusters[pt_tuple])
+            
+            updated_merged_clusters.append(sorted(merged_cluster_set))
+        
+        # Now update each cluster's skeleton with the merged edge points
+        for k in densified.keys():
+            skel_pts = densified[k]
+            
+            # Identify which points are edge points in this cluster
+            cluster_edge_idxs = [i for i, clist in enumerate(merged_clusters) if k in clist]
+            cluster_edge_pts = merged_edge_points[cluster_edge_idxs] if cluster_edge_idxs else np.array([])
+            
+            edge_mask = self._identify_edge_points_in_skeleton(skel_pts, cluster_edge_pts)
+            edge_points = skel_pts[edge_mask]
+            interpolated_points = skel_pts[~edge_mask]
+            
+            # Find the corresponding merged edge points for this cluster
+            cluster_merged_edge_points = []
+            for i, clusters in enumerate(updated_merged_clusters):
+                if k in clusters:
+                    cluster_merged_edge_points.append(updated_merged_edge_points[i])
+            
+            if cluster_merged_edge_points:
+                # Replace edge points with merged versions
+                final_points = np.vstack([cluster_merged_edge_points, interpolated_points])
+                merged_densified[k] = final_points
+            else:
+                merged_densified[k] = skel_pts
+        
+        # Convert to numpy arrays
+        updated_merged_edge_points = np.array(updated_merged_edge_points)
+        
+        return merged_densified, updated_merged_edge_points, updated_merged_clusters
+    
+    def extend_single_cluster_endpoints(self, merged_densified, merged_edge_points, merged_clusters, voxel_factor=2.5):
+        """
+        Extend single-cluster edge points by 1 voxel size in the direction from the closest densified point (excluding itself) to the edge point.
+        """
+        extended_densified = merged_densified.copy()
+
+        for k, skel_pts in merged_densified.items():
+            # Find edge points that belong only to this cluster
+            single_cluster_edge_points = []
+            for i, clusters in enumerate(merged_clusters):
+                if len(clusters) == 1 and clusters[0] == k:
+                    single_cluster_edge_points.append(merged_edge_points[i])
+
+            if not single_cluster_edge_points or len(skel_pts) < 2:
+                continue
+
+            single_cluster_edge_points = np.array(single_cluster_edge_points)
+            extended_points = []
+
+            # For each edge point, find the closest other densified point (not itself)
+            for edge_point in single_cluster_edge_points:
+                # Exclude the edge point itself from the search
+                other_skel_pts = skel_pts[np.any(np.abs(skel_pts - edge_point) > 1e-8, axis=1)]
+                if len(other_skel_pts) == 0:
+                    continue
+                dists = np.linalg.norm(other_skel_pts - edge_point, axis=1)
+                closest_pt = other_skel_pts[np.argmin(dists)]
+                direction = edge_point - closest_pt
+                direction_norm = np.linalg.norm(direction)
+                if direction_norm > 0:
+                    direction /= direction_norm
+                    extension_point = edge_point + direction * voxel_factor * self.voxel_size
+                    extended_points.append(extension_point)
+            print(f"Extended {len(extended_points)} single-cluster edge points for cluster {k}.")
+            if extended_points:
+                extended_points = np.array(extended_points)
+                current_points = extended_densified[k]
+                extended_densified[k] = np.vstack([current_points, extended_points])
+
+        return extended_densified
+
         
 
 class RealTimeSkeletonizerNode(Node):
@@ -268,6 +421,12 @@ class RealTimeSkeletonizerNode(Node):
         raw_edge_points, raw_edge_clusters, raw_centroids, edge_color, centroid_color = self.skel.extract_edges_and_centroids(points, labels, best_k)
         merged_edge_points, merged_clusters = self.skel.merge_points_within_clusters(raw_edge_points, raw_edge_clusters, points)
         densified = self.skel.densify_skeleton(merged_edge_points, merged_clusters, points, labels, max_dist=5)
+        merged_densified, updated_merged_edge_points, updated_merged_clusters = self.skel.merge_skeleton_points(
+            densified, merged_edge_points, merged_clusters
+        )
+        extended_densified = self.skel.extend_single_cluster_endpoints(
+            merged_densified,  updated_merged_edge_points, updated_merged_clusters, voxel_factor=2.5
+        )
 
         # Combine edge points and centroids
         combined_points = np.vstack([merged_edge_points, raw_centroids])
@@ -303,11 +462,11 @@ class RealTimeSkeletonizerNode(Node):
             self.get_logger().info(f"Published {len(raw_edge_points)} edge points and {len(raw_centroids)} centroids.")
 
         # Publish densified skeleton with unique color per cluster
-        if densified:
+        if extended_densified:
             all_skel_points = []
             all_skel_colors = []
-            color_map = self.distinct_colors(max(densified.keys()) + 1)
-            for k, pts in densified.items():
+            color_map = self.distinct_colors(max(extended_densified.keys()) + 1)
+            for k, pts in extended_densified.items():
                 all_skel_points.append(pts)
                 all_skel_colors.append(np.tile(color_map[k], (pts.shape[0], 1)))
             all_skel_points = np.vstack(all_skel_points)
