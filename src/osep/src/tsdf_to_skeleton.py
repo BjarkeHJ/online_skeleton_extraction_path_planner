@@ -340,7 +340,7 @@ class Skeletonizer:
         # Points that are very close to an edge point are considered edge points
         return distances.flatten() < tol
         
-    def merge_skeleton_points(self, densified, merged_edge_points, merged_clusters):
+    def merge_edge_skeleton_points(self, densified, merged_edge_points, merged_clusters):
         """
         Merge edge points in the skeleton, including those from different clusters if nearby
         Returns: merged_densified, updated_merged_edge_points, updated_merged_clusters
@@ -566,7 +566,7 @@ class RealTimeSkeletonizerNode(Node):
         raw_edge_points, raw_edge_clusters, raw_centroids = self.skel.extract_edges_and_centroids(points, labels, best_k)
         merged_edge_points, merged_clusters = self.skel.merge_points_within_clusters(raw_edge_points, raw_edge_clusters, points)
         densified = self.skel.densify_skeleton(merged_edge_points, merged_clusters, dilated_points, dilated_labels, max_dist=5)
-        merged_densified, updated_merged_edge_points, updated_merged_clusters = self.skel.merge_skeleton_points(
+        merged_densified, updated_merged_edge_points, updated_merged_clusters = self.skel.merge_edge_skeleton_points(
             densified, merged_edge_points, merged_clusters
         )
         extended_densified = self.skel.extend_single_cluster_endpoints(
