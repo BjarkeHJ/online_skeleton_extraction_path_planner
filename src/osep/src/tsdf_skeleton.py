@@ -417,7 +417,7 @@ class RealTimeSkeletonizerNode(Node):
         points = np.asarray(list(pc2.read_points(msg, field_names=("x", "y", "z"), skip_nans=True)))
         if points.dtype.fields is not None:
             points = np.stack([points['x'], points['y'], points['z']], axis=-1)
-        points = self.skel.filter_lonely_points(points, min_cluster_size=10, eps_factor=5.0)
+        points = self.skel.filter_lonely_points(points, min_cluster_size=30, eps_factor=5.0)
         if len(points) == 0:
             self.get_logger().warn("Received empty point cloud after filtering.")
             return
