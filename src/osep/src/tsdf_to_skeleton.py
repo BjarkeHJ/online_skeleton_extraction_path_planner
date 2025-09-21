@@ -118,6 +118,7 @@ class Skeletonizer:
         bics, models = [], []
         threshold = 0.01  # 1% relative improvement cutoff
         elbow_idx = None
+        skip_processing_publishes_last_msg = False
         for k in range(1, self.max_clusters + 1):
             gmm = GaussianMixture(n_components=k, covariance_type="full", random_state=42)
             gmm.fit(dilated_points)
@@ -136,6 +137,10 @@ class Skeletonizer:
         bics = np.array(bics)
         detected_k = elbow_idx
         best_k = self._update_stable_k(detected_k)
+        if best_k != detected_k:
+            print(f"Using stable cluster count k={best_k} instead of detected k={detected_k}")
+            skip_processing_publishes_last_msg = True
+
         best_gmm = models[best_k - 1]
 
         # Assign labels for both original and dilated points
@@ -162,7 +167,7 @@ class Skeletonizer:
         best_k = next_label
 
         print(f"Cluster sizes: {np.bincount(labels[labels >= 0])}")
-        return labels, dilated_labels, best_k
+        return labels, dilated_labels, best_k, skip_processing_publishes_last_msg
 
     def extract_edges_and_centroids(self, points, labels, best_k):
         raw_edge_points = []
@@ -549,7 +554,15 @@ class RealTimeSkeletonizerNode(Node):
             return
 
         dilated_points = self.skel.full_dilation(points, dilation_voxels=1)
-        labels, dilated_labels, best_k = self.skel.cluster_detection(points, dilated_points, min_cluster_size=50)
+        labels, dilated_labels, best_k, skip_processing_publishes_last_msg = self.skel.cluster_detection(points, dilated_points, min_cluster_size=50)
+        
+        if skip_processing_publishes_last_msg:
+            if self.last_centroids_msg is not None:
+                self.centroids_pub.publish(self.last_centroids_msg)
+            if self.last_skeleton_msg is not None:
+                self.skeleton_pub.publish(self.last_skeleton_msg)
+            return
+        
         raw_edge_points, raw_edge_clusters, raw_centroids = self.skel.extract_edges_and_centroids(points, labels, best_k)
         merged_edge_points, merged_clusters = self.skel.merge_points_within_clusters(raw_edge_points, raw_edge_clusters, points)
         densified = self.skel.densify_skeleton(merged_edge_points, merged_clusters, dilated_points, dilated_labels, max_dist=5)
