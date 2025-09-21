@@ -76,9 +76,9 @@ install(DIRECTORY config launch
 
 # Install Python node
 install(
-  PROGRAMS src/tsdf_skeleton.py
+  PROGRAMS src/tsdf_to_skeleton.py
   DESTINATION lib/${PROJECT_NAME}
-  RENAME tsdf_skeleton_python
+  RENAME tsdf_to_skeleton
 )
 
 install(
