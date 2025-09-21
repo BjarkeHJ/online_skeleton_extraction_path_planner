@@ -52,28 +52,77 @@ class Skeletonizer:
                 int(np.floor(y / self.super_voxel_size)),
                 int(np.floor(z / self.super_voxel_size)))
 
-    def cluster_detection(self, points):
+    def _full_dilation(self, points, dilation_voxels=1):
+        """
+        Perform full 3D dilation: for each point, add all neighbors within dilation_voxels in each axis.
+        Returns unique set of dilated points.
+        """
+        offsets = np.array([
+            [dx, dy, dz]
+            for dx in range(-dilation_voxels, dilation_voxels + 1)
+            for dy in range(-dilation_voxels, dilation_voxels + 1)
+            for dz in range(-dilation_voxels, dilation_voxels + 1)
+        ]) * self.voxel_size
+
+        # Broadcast-add offsets to all points
+        dilated = (points[:, None, :] + offsets[None, :, :]).reshape(-1, 3)
+        # Remove duplicates
+        dilated_unique = np.unique(dilated, axis=0)
+        return dilated_unique
+
+    def cluster_detection(self, points, dilation_voxels=1, min_cluster_size=50):
         print("🔄 Fitting GMM models (iterative elbow detection)...")
+        # 1. Dilation for GMM fitting only
+        if dilation_voxels > 0:
+            dilated_points = self._full_dilation(points, dilation_voxels)
+            print(f"Applied full dilation with {dilation_voxels} voxels. Dilation points: {len(dilated_points)}")
+        else:
+            dilated_points = points
+
         bics, models = [], []
         threshold = 0.02  # 2% relative improvement cutoff
         elbow_idx = None
         for k in range(1, self.max_clusters + 1):
             gmm = GaussianMixture(n_components=k, covariance_type="full", random_state=42)
-            gmm.fit(points)
-            bics.append(gmm.bic(points))
+            gmm.fit(dilated_points)
+            bics.append(gmm.bic(dilated_points))
             models.append(gmm)
             if k > 1:
                 improvement = -(bics[-1] - bics[-2]) / abs(bics[-2])
                 if improvement < threshold:
                     elbow_idx = k - 1
+                    print(f"Elbow detected at k={elbow_idx} (breaking point, improvement={improvement:.4f})")
                     break
         if elbow_idx is None:
             elbow_idx = int(np.argmin(bics)) + 1
         bics = np.array(bics)
         best_k = elbow_idx
         best_gmm = models[best_k - 1]
+
+        # 2. Assign each original point to the nearest GMM component
         labels = best_gmm.predict(points)
-        print(f"Cluster sizes: {np.bincount(labels)}")
+
+        # 3. Optionally: split each cluster into connected components (on original points)
+        final_labels = np.full_like(labels, -1)
+        next_label = 0
+        for k in range(best_k):
+            mask = (labels == k)
+            if np.sum(mask) == 0:
+                continue
+            db = DBSCAN(eps=3.0 * self.voxel_size, min_samples=1).fit(points[mask])
+            sub_labels = db.labels_
+            for sub in np.unique(sub_labels):
+                sub_mask = (sub_labels == sub)
+                cluster_indices = np.where(mask)[0][sub_mask]
+                if len(cluster_indices) < min_cluster_size:
+                    # Too small, skip (leave as -1)
+                    continue
+                final_labels[cluster_indices] = next_label
+                next_label += 1
+        labels = final_labels
+        best_k = next_label
+
+        print(f"Cluster sizes: {np.bincount(labels[labels >= 0])}")
         return labels, best_k
 
     def extract_edges_and_centroids(self, points, labels, best_k):
@@ -433,8 +482,7 @@ class RealTimeSkeletonizerNode(Node):
             self.get_logger().warn("Received empty point cloud after filtering.")
             return
 
-
-        labels, best_k = self.skel.cluster_detection(points)
+        labels, best_k = self.skel.cluster_detection(points, dilation_voxels=1, min_cluster_size=50)
         raw_edge_points, raw_edge_clusters, raw_centroids = self.skel.extract_edges_and_centroids(points, labels, best_k)
         merged_edge_points, merged_clusters = self.skel.merge_points_within_clusters(raw_edge_points, raw_edge_clusters, points)
         densified = self.skel.densify_skeleton(merged_edge_points, merged_clusters, points, labels, max_dist=5)
