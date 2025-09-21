@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import warnings
+warnings.filterwarnings("ignore", message="Unable to import Axes3D")
+
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import PointCloud2, PointField
@@ -8,6 +11,9 @@ from sklearn.cluster import DBSCAN
 from scipy.sparse.csgraph import minimum_spanning_tree
 from sklearn.mixture import GaussianMixture
 import sensor_msgs_py.point_cloud2 as pc2
+import matplotlib.pyplot as plt
+
+
 
 
 class Skeletonizer:
@@ -229,6 +235,17 @@ class RealTimeSkeletonizerNode(Node):
         self.last_skeleton_msg = None
         self.last_centroids_msg = None
 
+    @staticmethod
+    def distinct_colors(n):
+        """Return n visually distinct RGB colors as uint8."""
+        cmap = plt.get_cmap('tab20' if n <= 20 else 'hsv')
+        colors = (np.array([cmap(i / n)[:3] for i in range(n)]) * 255).astype(np.uint8)
+        return colors
+    @staticmethod
+    def pack_rgb(r, g, b):
+        rgb_uint32 = (int(r) << 16) | (int(g) << 8) | int(b)
+        return np.frombuffer(np.uint32(rgb_uint32).tobytes(), dtype=np.float32)[0]
+
     def callback(self, msg):
         points = np.asarray(list(pc2.read_points(msg, field_names=("x", "y", "z"), skip_nans=True)))
         if points.dtype.fields is not None:
@@ -261,10 +278,6 @@ class RealTimeSkeletonizerNode(Node):
             np.tile(centroid_rgb, (len(raw_centroids), 1))
         ])
 
-        def pack_rgb(r, g, b):
-            rgb_uint32 = (int(r) << 16) | (int(g) << 8) | int(b)
-            return np.frombuffer(np.uint32(rgb_uint32).tobytes(), dtype=np.float32)[0]
-
         # Publish edge points and centroids (combined)
         if combined_points.shape[0] > 0:
             structured_combined = np.zeros(combined_points.shape[0], dtype=[
@@ -274,7 +287,7 @@ class RealTimeSkeletonizerNode(Node):
             structured_combined['x'] = combined_points[:, 0]
             structured_combined['y'] = combined_points[:, 1]
             structured_combined['z'] = combined_points[:, 2]
-            structured_combined['rgb'] = [pack_rgb(*c) for c in combined_colors]
+            structured_combined['rgb'] = [self.pack_rgb(*c) for c in combined_colors]
 
             fields = [
                 PointField(name='x', offset=0, datatype=PointField.FLOAT32, count=1),
@@ -293,8 +306,7 @@ class RealTimeSkeletonizerNode(Node):
         if densified:
             all_skel_points = []
             all_skel_colors = []
-            rng = np.random.default_rng(42)
-            color_map = rng.integers(0, 255, size=(max(densified.keys())+1, 3), dtype=np.uint8)
+            color_map = self.distinct_colors(max(densified.keys()) + 1)
             for k, pts in densified.items():
                 all_skel_points.append(pts)
                 all_skel_colors.append(np.tile(color_map[k], (pts.shape[0], 1)))
@@ -307,7 +319,7 @@ class RealTimeSkeletonizerNode(Node):
             structured_skel['x'] = all_skel_points[:, 0]
             structured_skel['y'] = all_skel_points[:, 1]
             structured_skel['z'] = all_skel_points[:, 2]
-            structured_skel['rgb'] = [pack_rgb(*c) for c in all_skel_colors]
+            structured_skel['rgb'] = [self.pack_rgb(*c) for c in all_skel_colors]
             fields = [
                 PointField(name='x', offset=0, datatype=PointField.FLOAT32, count=1),
                 PointField(name='y', offset=4, datatype=PointField.FLOAT32, count=1),
