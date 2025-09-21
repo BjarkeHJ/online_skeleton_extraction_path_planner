@@ -119,6 +119,11 @@ class Skeletonizer:
                 if improvement < threshold:
                     elbow_idx = k - 1
                     print(f"Elbow detected at k={elbow_idx} (breaking point, improvement={improvement:.4f})")
+                    # Fit one more model to have it available if needed
+                    gmm = GaussianMixture(n_components=k+1, covariance_type="full", random_state=42)
+                    gmm.fit(dilated_points)
+                    bics.append(gmm.bic(dilated_points))
+                    models.append(gmm)
                     break
         if elbow_idx is None:
             elbow_idx = int(np.argmin(bics)) + 1
