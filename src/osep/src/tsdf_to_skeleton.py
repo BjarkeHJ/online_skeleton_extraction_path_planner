@@ -27,7 +27,7 @@ class Skeletonizer:
         self.max_clusters = max_clusters
         self.merge_radius_factor = merge_radius_factor
 
-        self.last_k = None
+        self.last_k = 0
         self.k_stability_counter = 0
         self.k_stable_epochs = 0
         self.k_min_switch = 2
@@ -82,7 +82,7 @@ class Skeletonizer:
         Dynamic hysteresis for stable cluster count selection.
         Returns the stable cluster count to use.
         """
-        if self.last_k is None:
+        if self.last_k == 0:
             self.last_k = detected_k
             self.k_stability_counter = 0
             self.k_stable_epochs = 1
@@ -116,14 +116,11 @@ class Skeletonizer:
             models.append(gmm)
             if k > 1:
                 improvement = -(bics[-1] - bics[-2]) / abs(bics[-2])
-                if improvement < threshold:
+                if improvement < threshold and elbow_idx is None:
                     elbow_idx = k - 1
                     print(f"Elbow detected at k={elbow_idx} (breaking point, improvement={improvement:.4f})")
-                    # Fit one more model to have it available if needed
-                    gmm = GaussianMixture(n_components=k+1, covariance_type="full", random_state=42)
-                    gmm.fit(dilated_points)
-                    bics.append(gmm.bic(dilated_points))
-                    models.append(gmm)
+                    continue
+                if (k >= self.last_k) and (elbow_idx is not None):
                     break
         if elbow_idx is None:
             elbow_idx = int(np.argmin(bics)) + 1
