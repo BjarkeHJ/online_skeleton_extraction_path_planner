@@ -127,12 +127,6 @@ class Skeletonizer:
         bics = np.array(bics)
         detected_k = elbow_idx
         best_k = self._update_stable_k(detected_k)
-        # Clamp best_k to available models
-        if best_k > len(models):
-            print(f"Warning: best_k={best_k} > fitted models ({len(models)}). Clamping.")
-            best_k = len(models)
-        if best_k < 1:
-            best_k = 1
         best_gmm = models[best_k - 1]
 
         # Assign labels for both original and dilated points
