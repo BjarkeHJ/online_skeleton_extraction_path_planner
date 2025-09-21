@@ -137,15 +137,16 @@ class Skeletonizer:
         bics = np.array(bics)
         detected_k = elbow_idx
         best_k = self._update_stable_k(detected_k)
-        if best_k != detected_k:
-            print(f"Using stable cluster count k={best_k} instead of detected k={detected_k}")
-            skip_processing_publishes_last_msg = True
 
         best_gmm = models[best_k - 1]
 
         # Assign labels for both original and dilated points
         labels = best_gmm.predict(points)
         dilated_labels = best_gmm.predict(dilated_points)
+        if best_k != detected_k:
+            print(f"Using stable cluster count k={best_k} instead of detected k={detected_k}")
+            skip_processing_publishes_last_msg = True
+            return labels, dilated_labels, best_k, skip_processing_publishes_last_msg
 
         # Optionally: split each cluster into connected components (on original points)
         final_labels = np.full_like(labels, -1)
