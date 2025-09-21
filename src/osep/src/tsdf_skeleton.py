@@ -29,6 +29,22 @@ class Skeletonizer:
         self.max_clusters = max_clusters
         self.merge_radius_factor = merge_radius_factor
 
+    def filter_lonely_points(self, points, min_cluster_size=10, eps_factor=3.0):
+        """
+        Remove points that are not part of a large connected component.
+        Uses DBSCAN to find connected structures.
+        """
+        if len(points) == 0:
+            return points
+        # eps is the neighborhood size, set relative to voxel size
+        eps = eps_factor * self.voxel_size
+        db = DBSCAN(eps=eps, min_samples=1).fit(points)
+        labels, counts = np.unique(db.labels_, return_counts=True)
+        # Only keep clusters with enough points
+        large_clusters = labels[counts >= min_cluster_size]
+        mask = np.isin(db.labels_, large_clusters)
+        return points[mask]
+
     def _quantize(self, x, y, z):
         return (int(np.floor(x / self.super_voxel_size)),
                 int(np.floor(y / self.super_voxel_size)),
@@ -59,8 +75,6 @@ class Skeletonizer:
         return labels, best_k, best_gmm
     
     def extract_edges_and_centroids(self, points, labels, best_k):
-        edge_color = np.array([1, 0, 0])  # Red
-        centroid_color = np.array([0, 0.5, 1])  # Blue-ish for centroid
         raw_edge_points = []
         raw_edge_clusters = []  # List of lists of cluster indices
         raw_centroids = []
@@ -75,7 +89,7 @@ class Skeletonizer:
                     raw_edge_points.append(cluster_points[ei])
                     raw_edge_clusters.append([k])
             raw_centroids.append(centroid)
-        return np.array(raw_edge_points), raw_edge_clusters, np.array(raw_centroids), edge_color, centroid_color
+        return np.array(raw_edge_points), raw_edge_clusters, np.array(raw_centroids)
     
     def _process_cluster(self, points):
         # 1. Supervoxel population map
@@ -403,8 +417,9 @@ class RealTimeSkeletonizerNode(Node):
         points = np.asarray(list(pc2.read_points(msg, field_names=("x", "y", "z"), skip_nans=True)))
         if points.dtype.fields is not None:
             points = np.stack([points['x'], points['y'], points['z']], axis=-1)
+        points = self.skel.filter_lonely_points(points, min_cluster_size=10, eps_factor=5.0)
         if len(points) == 0:
-            self.get_logger().warn("Received empty point cloud.")
+            self.get_logger().warn("Received empty point cloud after filtering.")
             return
 
         # Early return if point count matches last published
@@ -418,7 +433,7 @@ class RealTimeSkeletonizerNode(Node):
             return
 
         labels, best_k, _ = self.skel.cluster_detection(points)
-        raw_edge_points, raw_edge_clusters, raw_centroids, edge_color, centroid_color = self.skel.extract_edges_and_centroids(points, labels, best_k)
+        raw_edge_points, raw_edge_clusters, raw_centroids = self.skel.extract_edges_and_centroids(points, labels, best_k)
         merged_edge_points, merged_clusters = self.skel.merge_points_within_clusters(raw_edge_points, raw_edge_clusters, points)
         densified = self.skel.densify_skeleton(merged_edge_points, merged_clusters, points, labels, max_dist=5)
         merged_densified, updated_merged_edge_points, updated_merged_clusters = self.skel.merge_skeleton_points(
