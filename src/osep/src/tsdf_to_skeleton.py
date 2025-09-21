@@ -330,9 +330,7 @@ class Skeletonizer:
         """
         Merge edge points in the skeleton, including those from different clusters if nearby
         Returns: merged_densified, updated_merged_edge_points, updated_merged_clusters
-        """
-        from sklearn.cluster import DBSCAN
-        
+        """        
         merged_densified = {}
         
         # First, collect ALL edge points from all clusters with their cluster associations
