@@ -248,36 +248,6 @@ class Skeletonizer:
         
         # Points that are very close to an edge point are considered edge points
         return distances.flatten() < tol
-    
-    def full_dilation(self, points, dilation_voxels=1):
-        """
-        Perform a full 3D dilation of the point cloud by the specified number of voxels.
-        """
-        if len(points) == 0:
-            return points
-        
-        # Create a set for fast lookup
-        point_set = set(map(tuple, np.round(points / self.voxel_size).astype(int)))
-        dilated_points = set(point_set)
-
-        # Generate offsets for dilation
-        offsets = []
-        for dx in range(-dilation_voxels, dilation_voxels + 1):
-            for dy in range(-dilation_voxels, dilation_voxels + 1):
-                for dz in range(-dilation_voxels, dilation_voxels + 1):
-                    if dx == 0 and dy == 0 and dz == 0:
-                        continue
-                    offsets.append((dx, dy, dz))
-
-        # Perform dilation
-        for pt in point_set:
-            for offset in offsets:
-                neighbor = (pt[0] + offset[0], pt[1] + offset[1], pt[2] + offset[2])
-                dilated_points.add(neighbor)
-
-        dilated_points = np.array(list(dilated_points)) * self.voxel_size
-        print(f"Dilated from {len(points)} to {len(dilated_points)} points.")
-        return dilated_points
         
     def merge_skeleton_points(self, densified, merged_edge_points, merged_clusters):
         """
@@ -407,7 +377,6 @@ class Skeletonizer:
                     direction /= direction_norm
                     extension_point = edge_point + direction * voxel_factor * self.voxel_size
                     extended_points.append(extension_point)
-            print(f"Extended {len(extended_points)} single-cluster edge points for cluster {k}.")
             if extended_points:
                 extended_points = np.array(extended_points)
                 current_points = extended_densified[k]
@@ -416,7 +385,6 @@ class Skeletonizer:
         return extended_densified
 
         
-
 class RealTimeSkeletonizerNode(Node):
     def __init__(self):
         super().__init__('realtime_skeletonizer')
@@ -451,10 +419,6 @@ class RealTimeSkeletonizerNode(Node):
         points = np.asarray(list(pc2.read_points(msg, field_names=("x", "y", "z"), skip_nans=True)))
         if points.dtype.fields is not None:
             points = np.stack([points['x'], points['y'], points['z']], axis=-1)
-        points = self.skel.filter_lonely_points(points, min_cluster_size=100, eps_factor=5.0)
-        if len(points) == 0:
-            self.get_logger().warn("Received empty point cloud after filtering.")
-            return
 
         # Early return if point count matches last published
         if (
@@ -466,11 +430,16 @@ class RealTimeSkeletonizerNode(Node):
             self.skeleton_pub.publish(self.last_skeleton_msg)
             return
 
+        points = self.skel.filter_lonely_points(points, min_cluster_size=100, eps_factor=5.0)
+        if len(points) == 0:
+            self.get_logger().warn("Received empty point cloud after filtering.")
+            return
+
+
         labels, best_k = self.skel.cluster_detection(points)
         raw_edge_points, raw_edge_clusters, raw_centroids = self.skel.extract_edges_and_centroids(points, labels, best_k)
         merged_edge_points, merged_clusters = self.skel.merge_points_within_clusters(raw_edge_points, raw_edge_clusters, points)
-        dense_points = self.skel.full_dilation(points, dilation_voxels=1)
-        densified = self.skel.densify_skeleton(merged_edge_points, merged_clusters, dense_points, labels, max_dist=5)
+        densified = self.skel.densify_skeleton(merged_edge_points, merged_clusters, points, labels, max_dist=5)
         merged_densified, updated_merged_edge_points, updated_merged_clusters = self.skel.merge_skeleton_points(
             densified, merged_edge_points, merged_clusters
         )
