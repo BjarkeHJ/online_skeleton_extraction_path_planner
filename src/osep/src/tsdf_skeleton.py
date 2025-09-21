@@ -28,7 +28,7 @@ class Skeletonizer:
         self.min_dist_factor = min_dist_factor
         self.max_clusters = max_clusters
         self.merge_radius_factor = merge_radius_factor
-
+     
     def filter_lonely_points(self, points, min_cluster_size=10, eps_factor=3.0):
         """
         Remove points that are not part of a large connected component.
@@ -77,7 +77,7 @@ class Skeletonizer:
         labels = best_gmm.predict(points)
         print(f"Cluster sizes: {np.bincount(labels)}")
         return labels, best_k
-    
+
     def extract_edges_and_centroids(self, points, labels, best_k):
         raw_edge_points = []
         raw_edge_clusters = []  # List of lists of cluster indices
@@ -249,6 +249,36 @@ class Skeletonizer:
         # Points that are very close to an edge point are considered edge points
         return distances.flatten() < tol
     
+    def full_dilation(self, points, dilation_voxels=1):
+        """
+        Perform a full 3D dilation of the point cloud by the specified number of voxels.
+        """
+        if len(points) == 0:
+            return points
+        
+        # Create a set for fast lookup
+        point_set = set(map(tuple, np.round(points / self.voxel_size).astype(int)))
+        dilated_points = set(point_set)
+
+        # Generate offsets for dilation
+        offsets = []
+        for dx in range(-dilation_voxels, dilation_voxels + 1):
+            for dy in range(-dilation_voxels, dilation_voxels + 1):
+                for dz in range(-dilation_voxels, dilation_voxels + 1):
+                    if dx == 0 and dy == 0 and dz == 0:
+                        continue
+                    offsets.append((dx, dy, dz))
+
+        # Perform dilation
+        for pt in point_set:
+            for offset in offsets:
+                neighbor = (pt[0] + offset[0], pt[1] + offset[1], pt[2] + offset[2])
+                dilated_points.add(neighbor)
+
+        dilated_points = np.array(list(dilated_points)) * self.voxel_size
+        print(f"Dilated from {len(points)} to {len(dilated_points)} points.")
+        return dilated_points
+        
     def merge_skeleton_points(self, densified, merged_edge_points, merged_clusters):
         """
         Merge edge points in the skeleton, including those from different clusters if nearby
@@ -439,7 +469,8 @@ class RealTimeSkeletonizerNode(Node):
         labels, best_k = self.skel.cluster_detection(points)
         raw_edge_points, raw_edge_clusters, raw_centroids = self.skel.extract_edges_and_centroids(points, labels, best_k)
         merged_edge_points, merged_clusters = self.skel.merge_points_within_clusters(raw_edge_points, raw_edge_clusters, points)
-        densified = self.skel.densify_skeleton(merged_edge_points, merged_clusters, points, labels, max_dist=5)
+        dense_points = self.skel.full_dilation(points, dilation_voxels=1)
+        densified = self.skel.densify_skeleton(merged_edge_points, merged_clusters, dense_points, labels, max_dist=5)
         merged_densified, updated_merged_edge_points, updated_merged_clusters = self.skel.merge_skeleton_points(
             densified, merged_edge_points, merged_clusters
         )
