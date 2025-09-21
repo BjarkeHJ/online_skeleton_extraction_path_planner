@@ -4,13 +4,14 @@ from rclpy.node import Node
 from sensor_msgs.msg import PointCloud2, PointField
 import collections
 import numpy as np
+from sklearn.cluster import DBSCAN
 from sklearn.mixture import GaussianMixture
 import sensor_msgs_py.point_cloud2 as pc2
 
 class Skeletonizer:
     def __init__(self, voxel_size=1.0, super_voxel_factor=4.0,
-                 max_edge_points=10, dot_threshold=0.8, min_dist_factor=5.0, max_clusters=20,
-                 merge_radius_factor=10.0):
+                 max_edge_points=10, dot_threshold=0.8, min_dist_factor=10.0, max_clusters=20,
+                 merge_radius_factor=5.0):
         self.voxel_size = voxel_size
         self.super_voxel_size = super_voxel_factor * voxel_size
         self.max_edge_points = max_edge_points
@@ -131,6 +132,34 @@ class Skeletonizer:
                 break
 
         return centroid, selected_indices
+    
+    def merge_points_within_clusters(self, merged_edge_points, merged_clusters, points):
+        """
+        For each cluster, merge points that are within 2x merge_radius of each other.
+        Returns new merged points and their cluster lists.
+        """
+        from sklearn.cluster import DBSCAN
+        merged_edge_points = np.asarray(merged_edge_points)
+        final_points = []
+        final_clusters = []
+        for k in set(i for clist in merged_clusters for i in clist):
+            idxs = [i for i, clist in enumerate(merged_clusters) if k in clist]
+            if len(idxs) == 0:
+                continue
+            pts = merged_edge_points[idxs]
+            db = DBSCAN(eps=2 * self.merge_radius_factor * self.voxel_size, min_samples=1).fit(pts)
+            for label in np.unique(db.labels_):
+                group = pts[db.labels_ == label]
+                group_idxs = np.array(idxs)[db.labels_ == label]
+                group_clusters = [merged_clusters[i] for i in group_idxs]
+                merged_cluster = sorted(set(i for sublist in group_clusters for i in sublist))
+                group_centroid = np.mean(group, axis=0)
+                dists = np.linalg.norm(points - group_centroid, axis=1)
+                best_idx = np.argmin(dists)
+                final_points.append(points[best_idx])
+                final_clusters.append(merged_cluster)
+        return np.array(final_points), final_clusters
+        
 
 class RealTimeSkeletonizerNode(Node):
     def __init__(self):
@@ -164,13 +193,14 @@ class RealTimeSkeletonizerNode(Node):
 
         labels, best_k, _ = self.skel.cluster_detection(points)
         raw_edge_points, raw_edge_clusters, raw_centroids, edge_color, centroid_color = self.skel.extract_edges_and_centroids(points, labels, best_k)
-
+        merged_edge_points, merged_clusters = self.skel.merge_points_within_clusters(raw_edge_points, raw_edge_clusters, points)
+        
         # Combine edge points and centroids
-        combined_points = np.vstack([raw_edge_points, raw_centroids])
+        combined_points = np.vstack([merged_edge_points, raw_centroids])
         edge_rgb = np.array([255, 0, 0], dtype=np.uint8)
         centroid_rgb = np.array([0, 128, 255], dtype=np.uint8)
         combined_colors = np.vstack([
-            np.tile(edge_rgb, (len(raw_edge_points), 1)),
+            np.tile(edge_rgb, (len(merged_edge_points), 1)),
             np.tile(centroid_rgb, (len(raw_centroids), 1))
         ])
 
