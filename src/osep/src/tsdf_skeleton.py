@@ -15,8 +15,6 @@ import sensor_msgs_py.point_cloud2 as pc2
 import matplotlib.pyplot as plt
 
 
-
-
 class Skeletonizer:
     def __init__(self, voxel_size=1.0, super_voxel_factor=4.0,
                  max_edge_points=10, dot_threshold=0.8, min_dist_factor=10.0, max_clusters=20,
