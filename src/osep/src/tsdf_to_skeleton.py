@@ -31,8 +31,9 @@ class Skeletonizer:
         self.k_stability_counter = 0
         self.k_stable_epochs = 0
         self.k_min_switch = 2
-        self.k_max_switch = 20
-        self.k_hysteresis_factor = 0.25
+        self.k_max_switch = 5
+        self.k_hysteresis_factor_up = 0.10   # Easier to increase
+        self.k_hysteresis_factor_down = 0.5  # Harder to decrease
      
     def filter_lonely_points(self, points, min_cluster_size=10, eps_factor=3.0):
         """
@@ -78,10 +79,6 @@ class Skeletonizer:
         return dilated_unique
 
     def _update_stable_k(self, detected_k):
-        """
-        Dynamic hysteresis for stable cluster count selection.
-        Returns the stable cluster count to use.
-        """
         if not hasattr(self, "previous_k"):
             self.previous_k = None
 
@@ -100,9 +97,16 @@ class Skeletonizer:
             else:
                 self.k_stability_counter = 1
                 self.previous_k = detected_k
+
+            # Use different hysteresis factors for up/down
+            if detected_k > self.last_k:
+                hysteresis_factor = self.k_hysteresis_factor_up
+            else:
+                hysteresis_factor = self.k_hysteresis_factor_down
+
             dynamic_threshold = min(
                 self.k_max_switch,
-                max(self.k_min_switch, int(self.k_hysteresis_factor * self.k_stable_epochs))
+                max(self.k_min_switch, int(hysteresis_factor * self.k_stable_epochs))
             )
             if self.k_stability_counter >= dynamic_threshold:
                 print(f"Switching cluster count from {self.last_k} to {detected_k} after {self.k_stability_counter} consecutive detections (threshold was {dynamic_threshold})")
