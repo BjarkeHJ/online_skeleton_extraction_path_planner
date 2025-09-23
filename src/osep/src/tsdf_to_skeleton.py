@@ -31,8 +31,9 @@ class Skeletonizer:
         self.k_stability_counter = 0
         self.k_stable_epochs = 0
         self.k_min_switch = 2
-        self.k_max_switch = 20
-        self.k_hysteresis_factor = 0.2
+        self.k_max_switch = 5
+        self.k_hysteresis_factor_up = 0.10   # Easier to increase
+        self.k_hysteresis_factor_down = 0.5  # Harder to decrease
      
     def filter_lonely_points(self, points, min_cluster_size=10, eps_factor=3.0):
         """
@@ -78,10 +79,6 @@ class Skeletonizer:
         return dilated_unique
 
     def _update_stable_k(self, detected_k):
-        """
-        Dynamic hysteresis for stable cluster count selection.
-        Returns the stable cluster count to use.
-        """
         if not hasattr(self, "previous_k"):
             self.previous_k = None
 
@@ -100,9 +97,16 @@ class Skeletonizer:
             else:
                 self.k_stability_counter = 1
                 self.previous_k = detected_k
+
+            # Use different hysteresis factors for up/down
+            if detected_k > self.last_k:
+                hysteresis_factor = self.k_hysteresis_factor_up
+            else:
+                hysteresis_factor = self.k_hysteresis_factor_down
+
             dynamic_threshold = min(
                 self.k_max_switch,
-                max(self.k_min_switch, int(self.k_hysteresis_factor * self.k_stable_epochs))
+                max(self.k_min_switch, int(hysteresis_factor * self.k_stable_epochs))
             )
             if self.k_stability_counter >= dynamic_threshold:
                 print(f"Switching cluster count from {self.last_k} to {detected_k} after {self.k_stability_counter} consecutive detections (threshold was {dynamic_threshold})")
@@ -118,6 +122,7 @@ class Skeletonizer:
         bics, models = [], []
         threshold = 0.01  # 1% relative improvement cutoff
         elbow_idx = None
+        skip_processing_publishes_last_msg = False
         for k in range(1, self.max_clusters + 1):
             gmm = GaussianMixture(n_components=k, covariance_type="full", random_state=42)
             gmm.fit(dilated_points)
@@ -136,11 +141,16 @@ class Skeletonizer:
         bics = np.array(bics)
         detected_k = elbow_idx
         best_k = self._update_stable_k(detected_k)
+
         best_gmm = models[best_k - 1]
 
         # Assign labels for both original and dilated points
         labels = best_gmm.predict(points)
         dilated_labels = best_gmm.predict(dilated_points)
+        if best_k != detected_k:
+            print(f"Using stable cluster count k={best_k} instead of detected k={detected_k}")
+            skip_processing_publishes_last_msg = True
+            return labels, dilated_labels, best_k, skip_processing_publishes_last_msg
 
         # Optionally: split each cluster into connected components (on original points)
         final_labels = np.full_like(labels, -1)
@@ -162,7 +172,7 @@ class Skeletonizer:
         best_k = next_label
 
         print(f"Cluster sizes: {np.bincount(labels[labels >= 0])}")
-        return labels, dilated_labels, best_k
+        return labels, dilated_labels, best_k, skip_processing_publishes_last_msg
 
     def extract_edges_and_centroids(self, points, labels, best_k):
         raw_edge_points = []
@@ -335,7 +345,7 @@ class Skeletonizer:
         # Points that are very close to an edge point are considered edge points
         return distances.flatten() < tol
         
-    def merge_skeleton_points(self, densified, merged_edge_points, merged_clusters):
+    def merge_edge_skeleton_points(self, densified, merged_edge_points, merged_clusters):
         """
         Merge edge points in the skeleton, including those from different clusters if nearby
         Returns: merged_densified, updated_merged_edge_points, updated_merged_clusters
@@ -549,11 +559,19 @@ class RealTimeSkeletonizerNode(Node):
             return
 
         dilated_points = self.skel.full_dilation(points, dilation_voxels=1)
-        labels, dilated_labels, best_k = self.skel.cluster_detection(points, dilated_points, min_cluster_size=50)
+        labels, dilated_labels, best_k, skip_processing_publishes_last_msg = self.skel.cluster_detection(points, dilated_points, min_cluster_size=50)
+        
+        if skip_processing_publishes_last_msg:
+            if self.last_centroids_msg is not None:
+                self.centroids_pub.publish(self.last_centroids_msg)
+            if self.last_skeleton_msg is not None:
+                self.skeleton_pub.publish(self.last_skeleton_msg)
+            return
+        
         raw_edge_points, raw_edge_clusters, raw_centroids = self.skel.extract_edges_and_centroids(points, labels, best_k)
         merged_edge_points, merged_clusters = self.skel.merge_points_within_clusters(raw_edge_points, raw_edge_clusters, points)
         densified = self.skel.densify_skeleton(merged_edge_points, merged_clusters, dilated_points, dilated_labels, max_dist=5)
-        merged_densified, updated_merged_edge_points, updated_merged_clusters = self.skel.merge_skeleton_points(
+        merged_densified, updated_merged_edge_points, updated_merged_clusters = self.skel.merge_edge_skeleton_points(
             densified, merged_edge_points, merged_clusters
         )
         extended_densified = self.skel.extend_single_cluster_endpoints(
