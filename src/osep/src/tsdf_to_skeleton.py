@@ -32,7 +32,7 @@ class Skeletonizer:
         self.k_stable_epochs = 0
         self.k_min_switch = 2
         self.k_max_switch = 20
-        self.k_hysteresis_factor = 0.2
+        self.k_hysteresis_factor = 0.25
      
     def filter_lonely_points(self, points, min_cluster_size=10, eps_factor=3.0):
         """
