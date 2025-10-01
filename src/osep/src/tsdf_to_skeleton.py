@@ -14,6 +14,9 @@ from sklearn.neighbors import NearestNeighbors
 import sensor_msgs_py.point_cloud2 as pc2
 import matplotlib.pyplot as plt
 
+from scipy.optimize import linear_sum_assignment
+import colorsys
+
 
 class Skeletonizer:
     def __init__(self, voxel_size=1.0, super_voxel_factor=4.0,
@@ -498,17 +501,103 @@ class RealTimeSkeletonizerNode(Node):
         self.last_skeleton_msg = None
         self.last_centroids_msg = None
 
+        self.tick = 0
+        self.next_cluster_id = 0
+        self.tracks = {} # id -> {"centroid": np.array([x,y,z]), "age": int, "miss": int}
+        self.id_to_color = {}
+        self.max_miss = 10
+
     @staticmethod
     def distinct_colors(n):
         """Return n visually distinct RGB colors as uint8."""
         cmap = plt.get_cmap('tab20' if n <= 20 else 'hsv')
         colors = (np.array([cmap(i / n)[:3] for i in range(n)]) * 255).astype(np.uint8)
         return colors
+    
     @staticmethod
     def pack_rgb(r, g, b):
         rgb_uint32 = (int(r) << 16) | (int(g) << 8) | int(b)
         return np.frombuffer(np.uint32(rgb_uint32).tobytes(), dtype=np.float32)[0]
-    
+
+    def compute_cluster_centroids(self, points, labels, K): #bhj
+        centroids = []
+        for k in range(K):
+            mask = (labels == k)
+            if np.any(mask):
+                centroid = np.mean(points[mask], axis=0)
+                centroids.append(centroid)
+            else:
+                centroids.append(None)
+        return centroids
+
+    def ensure_color(self, cid): #bhj
+        if cid not in self.id_to_color:
+            golden = 0.61803398875
+            h = (cid * golden) % 1.0          # well-spaced hue around the circle
+            s = 0.92
+            # small deterministic value wobble to separate near hues in dense id ranges
+            v_base = 0.98
+            v = v_base - 0.08 * (((cid * 97) % 5) / 4.0)
+            r, g, b = colorsys.hsv_to_rgb(h, s, v)
+            self.id_to_color[cid] = np.array([int(r * 255), int(g * 255), int(b * 255)], dtype=np.uint8)
+        return self.id_to_color[cid]
+
+    def assign_stable_id(self, curr_centroids, dist_gate=3.0): #bhj
+        track_ids = list(self.tracks.keys())
+        track_centroids = np.array([self.tracks[i]["centroid"] for i in track_ids]) if track_ids else np.empty((0,3))
+
+        valid_curr = [(i,c) for i,c in enumerate(curr_centroids) if c is not None]
+        if not valid_curr:
+            for i in track_ids:
+                self.tracks[i]["miss"] += 1
+            return {}
+        
+        idxs_curr = [i for i,_ in valid_curr]
+        curr_mat = np.vstack([c for _,c in valid_curr])
+
+        if len(track_ids) and len(curr_mat):
+            dists = np.linalg.norm(curr_mat[:,None,:] - track_centroids[None,:,:], axis=2)
+            row_ind, col_ind = linear_sum_assignment(dists)
+        else:
+            row_ind, col_ind = np.array([], dtype=int), np.array([], dtype=int)
+        
+        k_to_id = {}
+        assigned_tracks = set()
+        assigned_curr = set()
+
+        for r, c in zip(row_ind, col_ind):
+            if dists[r, c] <= dist_gate:
+                k = idxs_curr[r]
+                tid = track_ids[c]
+                k_to_id[k] = tid
+                assigned_tracks.add(tid)
+                assigned_curr.add(k)
+
+                self.tracks[tid]["centroid"] = curr_mat[r]
+                self.tracks[tid]["age"] += 1
+                self.tracks[tid]["miss"] = 0
+        
+        # new tracks / unmatched clusters
+        for k, c in valid_curr:
+            if k in assigned_curr:
+                continue
+            tid = self.next_cluster_id
+            self.next_cluster_id += 1
+            self.tracks[tid] = {"centroid": c, "age": 1, "miss": 0}
+            k_to_id[k] = tid
+        
+        for tid in track_ids:
+            if tid not in assigned_tracks:
+                self.tracks[tid]["miss"] += 1
+        
+        stale = [tid for tid,v in self.tracks.items() if v["miss"] > self.max_miss]
+        for tid in stale:
+            del self.tracks[tid]
+        
+        return k_to_id
+
+
+
     def pack_points_with_colors(self, points, colors):
         """Pack points and uint8 RGB colors into a structured array for PointCloud2."""
         structured = np.zeros(points.shape[0], dtype=[
@@ -567,7 +656,17 @@ class RealTimeSkeletonizerNode(Node):
             if self.last_skeleton_msg is not None:
                 self.skeleton_pub.publish(self.last_skeleton_msg)
             return
-        
+
+        # STABLE IDS
+        centroids = self.compute_cluster_centroids(points, labels, best_k)
+        k_to_id = self.assign_stable_id(centroids, dist_gate=3.0 * self.skel.voxel_size)
+        global_labels = np.full_like(labels, -1)
+        for k in range(best_k):
+            pid = k_to_id.get(k, None)
+            if pid is not None:
+                global_labels[labels == k] = pid #used below??
+        # ----
+
         raw_edge_points, raw_edge_clusters, raw_centroids = self.skel.extract_edges_and_centroids(points, labels, best_k)
         merged_edge_points, merged_clusters = self.skel.merge_points_within_clusters(raw_edge_points, raw_edge_clusters, points)
         densified = self.skel.densify_skeleton(merged_edge_points, merged_clusters, dilated_points, dilated_labels, max_dist=5)
@@ -579,7 +678,7 @@ class RealTimeSkeletonizerNode(Node):
         )
 
         # Combine edge points and centroids
-       # Before combining edge points and centroids in callback:
+        # Before combining edge points and centroids in callback:
         if merged_edge_points.size == 0:
             merged_edge_points = np.empty((0, 3))
         if raw_centroids.size == 0:
@@ -607,10 +706,20 @@ class RealTimeSkeletonizerNode(Node):
             all_skel_colors = []
             color_map = self.distinct_colors(max(extended_densified.keys()) + 1)
             for k, pts in extended_densified.items():
+
+                pid = k_to_id.get(k, None)
+                if pid is None:
+                    continue
                 all_skel_points.append(pts)
-                all_skel_colors.append(np.tile(color_map[k], (pts.shape[0], 1)))
-            all_skel_points = np.vstack(all_skel_points)
-            all_skel_colors = np.vstack(all_skel_colors)
+                all_skel_colors.append(np.tile(self.ensure_color(pid), (pts.shape[0], 1)))
+            if all_skel_points:
+                all_skel_points = np.vstack(all_skel_points)
+                all_skel_colors = np.vstack(all_skel_colors)
+
+            # all_skel_points.append(pts)
+            # all_skel_colors.append(np.tile(color_map[k], (pts.shape[0], 1)))
+            # all_skel_points = np.vstack(all_skel_points)
+            # all_skel_colors = np.vstack(all_skel_colors)
             skel_msg = self.publish_pointcloud(
                 all_skel_points, all_skel_colors, msg.header, self.skeleton_pub
             )
