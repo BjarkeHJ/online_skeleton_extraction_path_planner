@@ -287,26 +287,82 @@ class Skeletonizer:
         return np.array(final_points), final_clusters
     
     
+    def _adaptive_thin_path(self, path_pts, voxel_size,
+                        step_len_straight=5.0,
+                        step_len_curve=1.5,
+                        curvature_threshold=0.15):
+        """
+        Thin a polyline adaptively: keep more points in curves, fewer in straight segments.
+        Args:
+            path_pts: (N, 3) array of points along the path
+            voxel_size: float, base voxel size
+            step_len_straight: float, spacing in straight regions (in voxel_size units)
+            step_len_curve: float, spacing in curved regions (in voxel_size units)
+            curvature_threshold: float, angle threshold (radians) to detect curves
+        Returns:
+            np.ndarray of thinned points
+        """
+        if len(path_pts) < 2:
+            return path_pts
+
+        step_straight = step_len_straight * voxel_size
+        step_curve = step_len_curve * voxel_size
+
+        thinned = [path_pts[0]]
+        acc = 0.0
+        for i in range(1, len(path_pts) - 1):
+            a, b, c = path_pts[i - 1], path_pts[i], path_pts[i + 1]
+            v1 = b - a
+            v2 = c - b
+            norm1 = np.linalg.norm(v1)
+            norm2 = np.linalg.norm(v2)
+            if norm1 > 1e-6 and norm2 > 1e-6:
+                cos_angle = np.clip(np.dot(v1, v2) / (norm1 * norm2), -1.0, 1.0)
+                angle = np.arccos(cos_angle)
+            else:
+                angle = 0.0
+
+            seg = np.linalg.norm(b - thinned[-1])
+            acc += seg
+
+            step = step_curve if angle > curvature_threshold else step_straight
+
+            if acc >= step:
+                thinned.append(b)
+                acc = 0.0
+
+        if len(path_pts) > 1:
+            thinned.append(path_pts[-1])
+
+        thinned = np.array(thinned)
+        if len(thinned) > 1:
+            thinned = np.unique(thinned, axis=0)
+        return thinned
+
+
     def densify_skeleton(self,
                         merged_edge_points, merged_clusters,
                         points, labels,
                         max_graph_radius_factor=3.5,
-                        step_thin_factor=1.5,
-                        min_points_for_skeleton=10):
+                        min_points_for_skeleton=10,
+                        step_len_straight=5.0,
+                        step_len_curve=1.5,
+                        curvature_threshold=0.15):
         """
         Densify skeleton by following the *occupied* pointcloud via geodesic paths.
         - For each cluster, build a radius-neighbors graph (on that cluster's points).
         - Compute geodesic (graph) distances between edge points.
         - Build MST on those geodesic distances.
         - Recover actual shortest paths for each MST edge and stitch them.
-        
         Args:
             merged_edge_points: (M, 3) final edge points after intra-cluster merging
             merged_clusters: list of lists, cluster associations per edge point
             points, labels: use *dilated* points/labels for routing (pass in dilated_* from caller)
             max_graph_radius_factor: radius (in voxels) for graph edges = factor * self.voxel_size
-            step_thin_factor: keep ~one point every (factor * voxel_size) along recovered paths
             min_points_for_skeleton: minimum cluster size to attempt skeletonization
+            step_len_straight: spacing in straight regions (in voxel_size units)
+            step_len_curve: spacing in curved regions (in voxel_size units)
+            curvature_threshold: angle threshold (radians) to detect curves
         Returns:
             dict: cluster_id -> (N_i, 3) np.array of skeleton points following the cloud
         """
@@ -388,8 +444,7 @@ class Skeletonizer:
             if not path_node_indices:
                 continue
 
-            # Concatenate unique nodes from all edge paths; thin the path points a bit
-            # (We simply union all nodes; if you prefer a stricter topology, you can keep them per branch.)
+            # Concatenate unique nodes from all edge paths
             all_nodes = []
             for seq in path_node_indices:
                 all_nodes.extend(seq)
@@ -400,21 +455,14 @@ class Skeletonizer:
             # Turn node indices into coordinates
             path_pts = cluster_points[np.array(all_nodes, dtype=int), :]
 
-            # Thin points: keep every ~step_len along the polyline
-            step_len = max(step_thin_factor * self.voxel_size, 1e-6)
-            thinned = [path_pts[0]]
-            acc = 0.0
-            for a, b in zip(path_pts[:-1], path_pts[1:]):
-                seg = np.linalg.norm(b - a)
-                acc += seg
-                if acc >= step_len:
-                    thinned.append(b)
-                    acc = 0.0
-
-            thinned = np.array(thinned)
-            # De-duplicate (optional)
-            if len(thinned) > 1:
-                thinned = np.unique(thinned, axis=0)
+            # Adaptive thinning based on curvature
+            thinned = self._adaptive_thin_path(
+                path_pts,
+                self.voxel_size,
+                step_len_straight=step_len_straight,
+                step_len_curve=step_len_curve,
+                curvature_threshold=curvature_threshold
+            )
 
             if len(thinned) >= 2:
                 densified[k] = thinned
@@ -757,7 +805,14 @@ class RealTimeSkeletonizerNode(Node):
 
         raw_edge_points, raw_edge_clusters, raw_centroids = self.skel.extract_edges_and_centroids(points, labels, best_k)
         merged_edge_points, merged_clusters = self.skel.merge_points_within_clusters(raw_edge_points, raw_edge_clusters, points)
-        densified = self.skel.densify_skeleton(merged_edge_points, merged_clusters, dilated_points, dilated_labels, max_graph_radius_factor=2.0, step_thin_factor=3.0, min_points_for_skeleton=10)
+        densified = self.skel.densify_skeleton(
+            merged_edge_points, merged_clusters, points, labels,
+            max_graph_radius_factor=3.5,
+            min_points_for_skeleton=10,
+            step_len_straight=4.0,
+            step_len_curve=2.0,
+            curvature_threshold=0.5
+        )
         merged_densified, updated_merged_edge_points, updated_merged_clusters = self.skel.merge_edge_skeleton_points(
             densified, merged_edge_points, merged_clusters
         )
