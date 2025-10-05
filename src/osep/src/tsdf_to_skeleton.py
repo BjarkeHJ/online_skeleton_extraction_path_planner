@@ -8,19 +8,20 @@ from sensor_msgs.msg import PointCloud2, PointField
 import collections
 import numpy as np
 from sklearn.cluster import DBSCAN
-from scipy.sparse.csgraph import minimum_spanning_tree
+from scipy.sparse.csgraph import minimum_spanning_tree, dijkstra
 from sklearn.mixture import GaussianMixture
 from sklearn.neighbors import NearestNeighbors
 import sensor_msgs_py.point_cloud2 as pc2
 import matplotlib.pyplot as plt
 
+from sklearn.neighbors import radius_neighbors_graph
 from scipy.optimize import linear_sum_assignment
 import colorsys
 
 
 class Skeletonizer:
     def __init__(self, voxel_size=1.0, super_voxel_factor=4.0,
-                 max_edge_points=10, dot_threshold=0.8, min_dist_factor=10.0, max_clusters=20,
+                 max_edge_points=10, dot_threshold=0.8, min_dist_factor=8.0, max_clusters=20,
                  merge_radius_factor=5.0):
         self.voxel_size = voxel_size
         self.super_voxel_size = super_voxel_factor * voxel_size
@@ -285,52 +286,187 @@ class Skeletonizer:
                 final_clusters.append(merged_cluster)
         return np.array(final_points), final_clusters
     
-    def densify_skeleton(self, merged_edge_points, merged_clusters, points, labels, 
-                        max_dist=5, min_points_for_skeleton=10):
-        
+    
+    def _adaptive_thin_path(self, path_pts, voxel_size,
+                        step_len_straight=5.0,
+                        step_len_curve=1.5,
+                        curvature_threshold=0.15):
+        """
+        Thin a polyline adaptively: keep more points in curves, fewer in straight segments.
+        Args:
+            path_pts: (N, 3) array of points along the path
+            voxel_size: float, base voxel size
+            step_len_straight: float, spacing in straight regions (in voxel_size units)
+            step_len_curve: float, spacing in curved regions (in voxel_size units)
+            curvature_threshold: float, angle threshold (radians) to detect curves
+        Returns:
+            np.ndarray of thinned points
+        """
+        if len(path_pts) < 2:
+            return path_pts
+
+        step_straight = step_len_straight * voxel_size
+        step_curve = step_len_curve * voxel_size
+
+        thinned = [path_pts[0]]
+        acc = 0.0
+        for i in range(1, len(path_pts) - 1):
+            a, b, c = path_pts[i - 1], path_pts[i], path_pts[i + 1]
+            v1 = b - a
+            v2 = c - b
+            norm1 = np.linalg.norm(v1)
+            norm2 = np.linalg.norm(v2)
+            if norm1 > 1e-6 and norm2 > 1e-6:
+                cos_angle = np.clip(np.dot(v1, v2) / (norm1 * norm2), -1.0, 1.0)
+                angle = np.arccos(cos_angle)
+            else:
+                angle = 0.0
+
+            seg = np.linalg.norm(b - thinned[-1])
+            acc += seg
+
+            step = step_curve if angle > curvature_threshold else step_straight
+
+            if acc >= step:
+                thinned.append(b)
+                acc = 0.0
+
+        if len(path_pts) > 1:
+            thinned.append(path_pts[-1])
+
+        thinned = np.array(thinned)
+        if len(thinned) > 1:
+            thinned = np.unique(thinned, axis=0)
+        return thinned
+
+
+    def densify_skeleton(self,
+                        merged_edge_points, merged_clusters,
+                        points, labels,
+                        max_graph_radius_factor=3.5,
+                        min_points_for_skeleton=10,
+                        step_len_straight=5.0,
+                        step_len_curve=1.5,
+                        curvature_threshold=0.15):
+        """
+        Densify skeleton by following the *occupied* pointcloud via geodesic paths.
+        - For each cluster, build a radius-neighbors graph (on that cluster's points).
+        - Compute geodesic (graph) distances between edge points.
+        - Build MST on those geodesic distances.
+        - Recover actual shortest paths for each MST edge and stitch them.
+        Args:
+            merged_edge_points: (M, 3) final edge points after intra-cluster merging
+            merged_clusters: list of lists, cluster associations per edge point
+            points, labels: use *dilated* points/labels for routing (pass in dilated_* from caller)
+            max_graph_radius_factor: radius (in voxels) for graph edges = factor * self.voxel_size
+            min_points_for_skeleton: minimum cluster size to attempt skeletonization
+            step_len_straight: spacing in straight regions (in voxel_size units)
+            step_len_curve: spacing in curved regions (in voxel_size units)
+            curvature_threshold: angle threshold (radians) to detect curves
+        Returns:
+            dict: cluster_id -> (N_i, 3) np.array of skeleton points following the cloud
+        """
         densified = {}
-        
-        for k in set(i for clist in merged_clusters for i in clist):
-            # Get all points in this cluster
+
+        # Map: for each cluster, collect its edge points (from merged_edge_points & merged_clusters)
+        cluster_to_edgepts = {}
+        for i, clist in enumerate(merged_clusters):
+            for k in clist:
+                cluster_to_edgepts.setdefault(k, []).append(merged_edge_points[i])
+
+        # For each cluster, build geodesic skeleton
+        for k in cluster_to_edgepts.keys():
+            # Get cluster points from (preferably) dilated cloud
             cluster_mask = (labels == k)
             cluster_points = points[cluster_mask]
-            
             if len(cluster_points) < min_points_for_skeleton:
                 continue
-                
-            # Get edge points for this cluster
-            idxs = [i for i, clist in enumerate(merged_clusters) if k in clist]
-            if len(idxs) < 2:
+
+            edge_pts = np.array(cluster_to_edgepts[k], dtype=float)
+            if edge_pts.shape[0] < 2:
                 continue
-                
-            edge_pts = np.array([merged_edge_points[i] for i in idxs])
-            
-            # Start with edge points as key skeleton points
-            skel_points = set(tuple(pt) for pt in edge_pts)
-            
-            # Build minimum spanning tree of edge points
-            n = len(edge_pts)
-            dist_matrix = np.full((n, n), np.inf)
-            for i in range(n):
-                for j in range(i+1, n):
-                    d = np.linalg.norm(edge_pts[i] - edge_pts[j])
-                    dist_matrix[i, j] = dist_matrix[j, i] = d
-            
-            mst = minimum_spanning_tree(dist_matrix)
-            mst_edges = np.array(mst.nonzero()).T
-            
-            # Interpolate between all connected edge points
-            for i, j in mst_edges:
-                p1, p2 = edge_pts[int(i)], edge_pts[int(j)]
-                d = np.linalg.norm(p2 - p1)
-                n_steps = max(1, int(np.ceil(d / (max_dist * self.voxel_size))))
-                for t in range(1, n_steps):
-                    interp = p1 + (p2 - p1) * (t / n_steps)
-                    skel_points.add(tuple(interp))
-            
-            if skel_points:
-                densified[k] = np.array(list(skel_points))
-        
+
+            # Map edge points to nearest nodes (indices) in the cluster graph
+            nbrs = NearestNeighbors(n_neighbors=1)
+            nbrs.fit(cluster_points)
+            edge_dists, edge_idxs = nbrs.kneighbors(edge_pts, return_distance=True)
+            edge_node_indices = edge_idxs.flatten()
+
+            # Build a radius graph on cluster points (weighted by Euclidean distance)
+            graph_radius = max_graph_radius_factor * self.voxel_size
+            G = radius_neighbors_graph(cluster_points, radius=graph_radius, mode='distance', include_self=False)
+            if G.nnz == 0:
+                # graph disconnected under this radius; skip
+                continue
+
+            # Geodesic distances between edge nodes (all-pairs via Dijkstra from each edge node)
+            nE = len(edge_node_indices)
+            pairwise_geo = np.full((nE, nE), np.inf, dtype=float)
+            # Also keep predecessors to reconstruct actual paths
+            predecessors_all = {}
+
+            for i, src in enumerate(edge_node_indices):
+                dist_i, predecessors = dijkstra(G, directed=False, indices=src, return_predecessors=True)
+                predecessors_all[src] = predecessors
+                for j, dst in enumerate(edge_node_indices):
+                    pairwise_geo[i, j] = dist_i[dst]
+
+            # Some pairs may be disconnected (inf); keep only finite ones
+            # Build MST over geodesic distances
+            # (Set diagonal to 0 and symmetrize)
+            np.fill_diagonal(pairwise_geo, 0.0)
+            pairwise_geo = np.minimum(pairwise_geo, pairwise_geo.T)
+            mst = minimum_spanning_tree(pairwise_geo)
+            mst_edges = np.array(mst.nonzero()).T  # edges on index range [0..nE)
+
+            # Recover actual node sequences for each MST edge using predecessors
+            path_node_indices = []
+            for ii, jj in mst_edges:
+                src_node = int(edge_node_indices[int(ii)])
+                dst_node = int(edge_node_indices[int(jj)])
+
+                # Run Dijkstra once from src_node with predecessors to ensure consistency
+                dist_src, predecessors = dijkstra(G, directed=False, indices=src_node, return_predecessors=True)
+                if not np.isfinite(dist_src[dst_node]):
+                    # No path; skip this edge
+                    continue
+
+                # Reconstruct path nodes by backtracking predecessors
+                path = []
+                cur = dst_node
+                while cur != -9999 and cur != -1 and cur != src_node:
+                    path.append(cur)
+                    cur = predecessors[cur]
+                path.append(src_node)
+                path = path[::-1]  # src -> ... -> dst
+                path_node_indices.append(path)
+
+            if not path_node_indices:
+                continue
+
+            # Concatenate unique nodes from all edge paths
+            all_nodes = []
+            for seq in path_node_indices:
+                all_nodes.extend(seq)
+
+            if not all_nodes:
+                continue
+
+            # Turn node indices into coordinates
+            path_pts = cluster_points[np.array(all_nodes, dtype=int), :]
+
+            # Adaptive thinning based on curvature
+            thinned = self._adaptive_thin_path(
+                path_pts,
+                self.voxel_size,
+                step_len_straight=step_len_straight,
+                step_len_curve=step_len_curve,
+                curvature_threshold=curvature_threshold
+            )
+
+            if len(thinned) >= 2:
+                densified[k] = thinned
+
         return densified
 
     def _identify_edge_points_in_skeleton(self, skeleton_points, merged_edge_points, tol=1e-3):
@@ -491,7 +627,9 @@ class RealTimeSkeletonizerNode(Node):
         self.input_topic = self.get_parameter('static_input_topic').get_parameter_value().string_value
         self.output_topic = self.get_parameter('output_topic').get_parameter_value().string_value
 
-        self.skel = Skeletonizer()
+        self.skel = Skeletonizer(voxel_size=1.0, super_voxel_factor=4.0,
+                 max_edge_points=10, dot_threshold=0.7, min_dist_factor=8.0, max_clusters=20,
+                 merge_radius_factor=5.0)
 
         self.sub = self.create_subscription(PointCloud2, self.input_topic, self.callback, 1)
         self.skeleton_pub = self.create_publisher(PointCloud2, self.output_topic, 1)
@@ -505,7 +643,7 @@ class RealTimeSkeletonizerNode(Node):
         self.next_cluster_id = 0
         self.tracks = {} # id -> {"centroid": np.array([x,y,z]), "age": int, "miss": int}
         self.id_to_color = {}
-        self.max_miss = 10
+        self.max_miss = 15
 
     @staticmethod
     def distinct_colors(n):
@@ -519,17 +657,6 @@ class RealTimeSkeletonizerNode(Node):
         rgb_uint32 = (int(r) << 16) | (int(g) << 8) | int(b)
         return np.frombuffer(np.uint32(rgb_uint32).tobytes(), dtype=np.float32)[0]
 
-    def compute_cluster_centroids(self, points, labels, K): #bhj
-        centroids = []
-        for k in range(K):
-            mask = (labels == k)
-            if np.any(mask):
-                centroid = np.mean(points[mask], axis=0)
-                centroids.append(centroid)
-            else:
-                centroids.append(None)
-        return centroids
-
     def ensure_color(self, cid): #bhj
         if cid not in self.id_to_color:
             golden = 0.61803398875
@@ -542,7 +669,7 @@ class RealTimeSkeletonizerNode(Node):
             self.id_to_color[cid] = np.array([int(r * 255), int(g * 255), int(b * 255)], dtype=np.uint8)
         return self.id_to_color[cid]
 
-    def assign_stable_id(self, curr_centroids, dist_gate=3.0): #bhj
+    def assign_stable_id(self, curr_centroids, dist_gate=5.0): #bhj
         track_ids = list(self.tracks.keys())
         track_centroids = np.array([self.tracks[i]["centroid"] for i in track_ids]) if track_ids else np.empty((0,3))
 
@@ -595,7 +722,6 @@ class RealTimeSkeletonizerNode(Node):
             del self.tracks[tid]
         
         return k_to_id
-
 
 
     def pack_points_with_colors(self, points, colors):
@@ -657,28 +783,33 @@ class RealTimeSkeletonizerNode(Node):
                 self.skeleton_pub.publish(self.last_skeleton_msg)
             return
 
-        # STABLE IDS
-        centroids = self.compute_cluster_centroids(points, labels, best_k)
-        k_to_id = self.assign_stable_id(centroids, dist_gate=3.0 * self.skel.voxel_size)
+        # --- Stable IDs using raw_centroids ---
+        raw_edge_points, raw_edge_clusters, raw_centroids = self.skel.extract_edges_and_centroids(points, labels, best_k)
+        k_to_id = self.assign_stable_id(raw_centroids, dist_gate=5.0 * self.skel.voxel_size)
         global_labels = np.full_like(labels, -1)
         for k in range(best_k):
             pid = k_to_id.get(k, None)
             if pid is not None:
-                global_labels[labels == k] = pid #used below??
-        # ----
+                global_labels[labels == k] = pid
+        # --------------------------------------
 
-        raw_edge_points, raw_edge_clusters, raw_centroids = self.skel.extract_edges_and_centroids(points, labels, best_k)
         merged_edge_points, merged_clusters = self.skel.merge_points_within_clusters(raw_edge_points, raw_edge_clusters, points)
-        densified = self.skel.densify_skeleton(merged_edge_points, merged_clusters, dilated_points, dilated_labels, max_dist=5)
+        densified = self.skel.densify_skeleton(
+            merged_edge_points, merged_clusters, points, labels,
+            max_graph_radius_factor=3.5,
+            min_points_for_skeleton=10,
+            step_len_straight=4.0,
+            step_len_curve=2.0,
+            curvature_threshold=0.5
+        )
         merged_densified, updated_merged_edge_points, updated_merged_clusters = self.skel.merge_edge_skeleton_points(
             densified, merged_edge_points, merged_clusters
         )
         extended_densified = self.skel.extend_single_cluster_endpoints(
-            merged_densified,  updated_merged_edge_points, updated_merged_clusters, voxel_factor=2.5
+            merged_densified, updated_merged_edge_points, updated_merged_clusters, voxel_factor=2.5
         )
 
-        # Combine edge points and centroids
-        # Before combining edge points and centroids in callback:
+        # Combine edge points and centroids for visualization
         if merged_edge_points.size == 0:
             merged_edge_points = np.empty((0, 3))
         if raw_centroids.size == 0:
@@ -698,15 +829,12 @@ class RealTimeSkeletonizerNode(Node):
                 combined_points, combined_colors, msg.header, self.centroids_pub
             )
             self.last_centroids_msg = pc2_msg
-            # self.get_logger().info(f"Published {len(raw_edge_points)} edge points and {len(raw_centroids)} centroids.")
 
-        # Publish densified skeleton with unique color per cluster
+        # Publish densified skeleton with unique color per cluster (using stable IDs)
         if extended_densified:
             all_skel_points = []
             all_skel_colors = []
-            color_map = self.distinct_colors(max(extended_densified.keys()) + 1)
             for k, pts in extended_densified.items():
-
                 pid = k_to_id.get(k, None)
                 if pid is None:
                     continue
@@ -715,16 +843,10 @@ class RealTimeSkeletonizerNode(Node):
             if all_skel_points:
                 all_skel_points = np.vstack(all_skel_points)
                 all_skel_colors = np.vstack(all_skel_colors)
-
-            # all_skel_points.append(pts)
-            # all_skel_colors.append(np.tile(color_map[k], (pts.shape[0], 1)))
-            # all_skel_points = np.vstack(all_skel_points)
-            # all_skel_colors = np.vstack(all_skel_colors)
-            skel_msg = self.publish_pointcloud(
-                all_skel_points, all_skel_colors, msg.header, self.skeleton_pub
-            )
-            self.last_skeleton_msg = skel_msg
-            # self.get_logger().info(f"Published densified skeleton with {all_skel_points.shape[0]} points.")
+                skel_msg = self.publish_pointcloud(
+                    all_skel_points, all_skel_colors, msg.header, self.skeleton_pub
+                )
+                self.last_skeleton_msg = skel_msg
 
 def main(args=None):
     rclpy.init(args=args)
