@@ -628,7 +628,7 @@ class RealTimeSkeletonizerNode(Node):
         self.output_topic = self.get_parameter('output_topic').get_parameter_value().string_value
 
         self.skel = Skeletonizer(voxel_size=1.0, super_voxel_factor=4.0,
-                 max_edge_points=10, dot_threshold=0.8, min_dist_factor=10.0, max_clusters=20,
+                 max_edge_points=10, dot_threshold=0.7, min_dist_factor=8.0, max_clusters=20,
                  merge_radius_factor=5.0)
 
         self.sub = self.create_subscription(PointCloud2, self.input_topic, self.callback, 1)
@@ -643,7 +643,7 @@ class RealTimeSkeletonizerNode(Node):
         self.next_cluster_id = 0
         self.tracks = {} # id -> {"centroid": np.array([x,y,z]), "age": int, "miss": int}
         self.id_to_color = {}
-        self.max_miss = 20
+        self.max_miss = 15
 
     @staticmethod
     def distinct_colors(n):
