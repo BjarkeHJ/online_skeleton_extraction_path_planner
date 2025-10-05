@@ -628,7 +628,7 @@ class RealTimeSkeletonizerNode(Node):
         self.output_topic = self.get_parameter('output_topic').get_parameter_value().string_value
 
         self.skel = Skeletonizer(voxel_size=1.0, super_voxel_factor=4.0,
-                 max_edge_points=10, dot_threshold=0.8, min_dist_factor=8.0, max_clusters=20,
+                 max_edge_points=10, dot_threshold=0.8, min_dist_factor=10.0, max_clusters=20,
                  merge_radius_factor=5.0)
 
         self.sub = self.create_subscription(PointCloud2, self.input_topic, self.callback, 1)
@@ -643,7 +643,7 @@ class RealTimeSkeletonizerNode(Node):
         self.next_cluster_id = 0
         self.tracks = {} # id -> {"centroid": np.array([x,y,z]), "age": int, "miss": int}
         self.id_to_color = {}
-        self.max_miss = 10
+        self.max_miss = 20
 
     @staticmethod
     def distinct_colors(n):
@@ -657,17 +657,6 @@ class RealTimeSkeletonizerNode(Node):
         rgb_uint32 = (int(r) << 16) | (int(g) << 8) | int(b)
         return np.frombuffer(np.uint32(rgb_uint32).tobytes(), dtype=np.float32)[0]
 
-    def compute_cluster_centroids(self, points, labels, K): #bhj
-        centroids = []
-        for k in range(K):
-            mask = (labels == k)
-            if np.any(mask):
-                centroid = np.mean(points[mask], axis=0)
-                centroids.append(centroid)
-            else:
-                centroids.append(None)
-        return centroids
-
     def ensure_color(self, cid): #bhj
         if cid not in self.id_to_color:
             golden = 0.61803398875
@@ -680,7 +669,7 @@ class RealTimeSkeletonizerNode(Node):
             self.id_to_color[cid] = np.array([int(r * 255), int(g * 255), int(b * 255)], dtype=np.uint8)
         return self.id_to_color[cid]
 
-    def assign_stable_id(self, curr_centroids, dist_gate=3.0): #bhj
+    def assign_stable_id(self, curr_centroids, dist_gate=5.0): #bhj
         track_ids = list(self.tracks.keys())
         track_centroids = np.array([self.tracks[i]["centroid"] for i in track_ids]) if track_ids else np.empty((0,3))
 
@@ -733,7 +722,6 @@ class RealTimeSkeletonizerNode(Node):
             del self.tracks[tid]
         
         return k_to_id
-
 
 
     def pack_points_with_colors(self, points, colors):
@@ -795,17 +783,16 @@ class RealTimeSkeletonizerNode(Node):
                 self.skeleton_pub.publish(self.last_skeleton_msg)
             return
 
-        # STABLE IDS
-        centroids = self.compute_cluster_centroids(points, labels, best_k)
-        k_to_id = self.assign_stable_id(centroids, dist_gate=3.0 * self.skel.voxel_size)
+        # --- Stable IDs using raw_centroids ---
+        raw_edge_points, raw_edge_clusters, raw_centroids = self.skel.extract_edges_and_centroids(points, labels, best_k)
+        k_to_id = self.assign_stable_id(raw_centroids, dist_gate=5.0 * self.skel.voxel_size)
         global_labels = np.full_like(labels, -1)
         for k in range(best_k):
             pid = k_to_id.get(k, None)
             if pid is not None:
-                global_labels[labels == k] = pid #used below??
-        # ----
+                global_labels[labels == k] = pid
+        # --------------------------------------
 
-        raw_edge_points, raw_edge_clusters, raw_centroids = self.skel.extract_edges_and_centroids(points, labels, best_k)
         merged_edge_points, merged_clusters = self.skel.merge_points_within_clusters(raw_edge_points, raw_edge_clusters, points)
         densified = self.skel.densify_skeleton(
             merged_edge_points, merged_clusters, points, labels,
@@ -819,11 +806,10 @@ class RealTimeSkeletonizerNode(Node):
             densified, merged_edge_points, merged_clusters
         )
         extended_densified = self.skel.extend_single_cluster_endpoints(
-            merged_densified,  updated_merged_edge_points, updated_merged_clusters, voxel_factor=2.5
+            merged_densified, updated_merged_edge_points, updated_merged_clusters, voxel_factor=2.5
         )
 
-        # Combine edge points and centroids
-        # Before combining edge points and centroids in callback:
+        # Combine edge points and centroids for visualization
         if merged_edge_points.size == 0:
             merged_edge_points = np.empty((0, 3))
         if raw_centroids.size == 0:
@@ -843,15 +829,12 @@ class RealTimeSkeletonizerNode(Node):
                 combined_points, combined_colors, msg.header, self.centroids_pub
             )
             self.last_centroids_msg = pc2_msg
-            # self.get_logger().info(f"Published {len(raw_edge_points)} edge points and {len(raw_centroids)} centroids.")
 
-        # Publish densified skeleton with unique color per cluster
+        # Publish densified skeleton with unique color per cluster (using stable IDs)
         if extended_densified:
             all_skel_points = []
             all_skel_colors = []
-            color_map = self.distinct_colors(max(extended_densified.keys()) + 1)
             for k, pts in extended_densified.items():
-
                 pid = k_to_id.get(k, None)
                 if pid is None:
                     continue
@@ -860,16 +843,10 @@ class RealTimeSkeletonizerNode(Node):
             if all_skel_points:
                 all_skel_points = np.vstack(all_skel_points)
                 all_skel_colors = np.vstack(all_skel_colors)
-
-            # all_skel_points.append(pts)
-            # all_skel_colors.append(np.tile(color_map[k], (pts.shape[0], 1)))
-            # all_skel_points = np.vstack(all_skel_points)
-            # all_skel_colors = np.vstack(all_skel_colors)
-            skel_msg = self.publish_pointcloud(
-                all_skel_points, all_skel_colors, msg.header, self.skeleton_pub
-            )
-            self.last_skeleton_msg = skel_msg
-            # self.get_logger().info(f"Published densified skeleton with {all_skel_points.shape[0]} points.")
+                skel_msg = self.publish_pointcloud(
+                    all_skel_points, all_skel_colors, msg.header, self.skeleton_pub
+                )
+                self.last_skeleton_msg = skel_msg
 
 def main(args=None):
     rclpy.init(args=args)
