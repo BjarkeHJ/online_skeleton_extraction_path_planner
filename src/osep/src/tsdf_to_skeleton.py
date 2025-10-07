@@ -585,6 +585,7 @@ class Skeletonizer:
         """
         Extend single-cluster edge points by voxel_factor size in the direction from the closest densified point (excluding itself) to the edge point.
         Ensures the original edge point is also present in the skeleton.
+        Adds points every 2 meters up to voxel_factor * voxel_size.
         """
         extended_densified = merged_densified.copy()
 
@@ -601,7 +602,6 @@ class Skeletonizer:
             single_cluster_edge_points = np.array(single_cluster_edge_points)
             extended_points = []
 
-            # For each edge point, find the closest other densified point (not itself)
             for edge_point in single_cluster_edge_points:
                 # Ensure the edge point is present in the skeleton
                 if not np.any(np.all(np.isclose(skel_pts, edge_point, atol=1e-8), axis=1)):
@@ -616,8 +616,11 @@ class Skeletonizer:
                 direction_norm = np.linalg.norm(direction)
                 if direction_norm > 0:
                     direction /= direction_norm
-                    extension_point = edge_point + direction * voxel_factor * self.voxel_size
-                    extended_points.append(extension_point)
+                    max_dist = voxel_factor * self.voxel_size
+                    n_points = int(np.floor(max_dist / 2.0))
+                    for i in range(1, n_points + 1):
+                        extension_point = edge_point + direction * (i * 2.0)
+                        extended_points.append(extension_point)
             if extended_points:
                 extended_points = np.array(extended_points)
                 current_points = extended_densified[k]
