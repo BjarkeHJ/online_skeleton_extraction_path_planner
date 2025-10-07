@@ -22,7 +22,7 @@ import colorsys
 class Skeletonizer:
     def __init__(self, voxel_size=1.0, super_voxel_factor=4.0,
                  max_edge_points=10, dot_threshold=0.8, min_dist_factor=8.0, max_dist_percentage=0.25, max_clusters=20,
-                 merge_radius_factor=5.0):
+                 merge_radius_factor=10.0):
         self.voxel_size = voxel_size
         self.super_voxel_size = super_voxel_factor * voxel_size
         self.max_edge_points = max_edge_points
@@ -277,7 +277,7 @@ class Skeletonizer:
             if len(idxs) == 0:
                 continue
             pts = merged_edge_points[idxs]
-            db = DBSCAN(eps=2 * self.merge_radius_factor * self.voxel_size, min_samples=1).fit(pts)
+            db = DBSCAN(eps=self.merge_radius_factor * self.voxel_size, min_samples=1).fit(pts)
             for label in np.unique(db.labels_):
                 group = pts[db.labels_ == label]
                 group_idxs = np.array(idxs)[db.labels_ == label]
@@ -581,7 +581,7 @@ class Skeletonizer:
         
         return merged_densified, updated_merged_edge_points, updated_merged_clusters
 
-    def extend_single_cluster_endpoints(self, merged_densified, merged_edge_points, merged_clusters, voxel_factor=5.0):
+    def extend_single_cluster_endpoints(self, merged_densified, merged_edge_points, merged_clusters, voxel_factor=6.0):
         """
         Extend single-cluster edge points by voxel_factor size in the direction from the closest densified point (excluding itself) to the edge point.
         Ensures the original edge point is also present in the skeleton.
@@ -617,9 +617,9 @@ class Skeletonizer:
                 if direction_norm > 0:
                     direction /= direction_norm
                     max_dist = voxel_factor * self.voxel_size
-                    n_points = int(np.floor(max_dist / 2.0))
+                    n_points = int(np.floor(max_dist / 3.0))
                     for i in range(1, n_points + 1):
-                        extension_point = edge_point + direction * (i * 2.0)
+                        extension_point = edge_point + direction * (i * 3.0)
                         extended_points.append(extension_point)
             if extended_points:
                 extended_points = np.array(extended_points)
@@ -642,7 +642,7 @@ class RealTimeSkeletonizerNode(Node):
 
         self.skel = Skeletonizer(voxel_size=self.voxel_size, super_voxel_factor=4.0,
                  max_edge_points=10, dot_threshold=0.7, min_dist_factor=5.0, max_dist_percentage=0.25, max_clusters=20,
-                 merge_radius_factor=5.0)
+                 merge_radius_factor=10.0)
 
         self.sub = self.create_subscription(PointCloud2, self.input_topic, self.callback, 1)
         self.skeleton_pub = self.create_publisher(PointCloud2, self.output_topic, 1)
@@ -819,7 +819,7 @@ class RealTimeSkeletonizerNode(Node):
             densified, merged_edge_points, merged_clusters
         )
         extended_densified = self.skel.extend_single_cluster_endpoints(
-            merged_densified, updated_merged_edge_points, updated_merged_clusters, voxel_factor=4.0
+            merged_densified, updated_merged_edge_points, updated_merged_clusters, voxel_factor=6.0
         )
 
         # Combine edge points and centroids for visualization
