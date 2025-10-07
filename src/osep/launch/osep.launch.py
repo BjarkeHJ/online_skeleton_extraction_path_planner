@@ -16,7 +16,8 @@ TOPIC_NAMES = {
     "VIEWPOINTS": '/osep/viewpoints',
     "VIEWPOINTS_ADJUSTED": '/osep/viewpoints_adjusted',
     "GROUND_TRUTH": '/osep/ground_truth',
-    "STATIC_POINTCLOUD": '/osep/tsdf/static_pointcloud'
+    "STATIC_POINTCLOUD": '/osep/tsdf/static_pointcloud',
+    "SKELETON": '/osep/tsdf/skeleton'
 }
 
 def generate_launch_description():
@@ -30,6 +31,17 @@ def generate_launch_description():
                 'output_topic': 'osep/tsdf/pointcloud',
                 'static_output_topic': TOPIC_NAMES["STATIC_POINTCLOUD"],
                 'cavity_fill_diameter': 5.0,
+                'voxel_size': VOXEL_SIZE
+            }],
+        ),
+        Node(
+            package='osep',
+            executable='tsdf_to_skeleton_node',
+            name='tsdf_to_skeleton_node',
+            output='screen',    
+            parameters=[{
+                'static_input_topic': TOPIC_NAMES["STATIC_POINTCLOUD"],
+                'output_topic': TOPIC_NAMES["SKELETON"],
                 'voxel_size': VOXEL_SIZE
             }],
         ),
