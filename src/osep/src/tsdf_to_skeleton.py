@@ -580,10 +580,11 @@ class Skeletonizer:
         updated_merged_edge_points = np.array(updated_merged_edge_points)
         
         return merged_densified, updated_merged_edge_points, updated_merged_clusters
-    
-    def extend_single_cluster_endpoints(self, merged_densified, merged_edge_points, merged_clusters, voxel_factor=2.5):
+
+    def extend_single_cluster_endpoints(self, merged_densified, merged_edge_points, merged_clusters, voxel_factor=5.0):
         """
-        Extend single-cluster edge points by 1 voxel size in the direction from the closest densified point (excluding itself) to the edge point.
+        Extend single-cluster edge points by voxel_factor size in the direction from the closest densified point (excluding itself) to the edge point.
+        Ensures the original edge point is also present in the skeleton.
         """
         extended_densified = merged_densified.copy()
 
@@ -602,6 +603,9 @@ class Skeletonizer:
 
             # For each edge point, find the closest other densified point (not itself)
             for edge_point in single_cluster_edge_points:
+                # Ensure the edge point is present in the skeleton
+                if not np.any(np.all(np.isclose(skel_pts, edge_point, atol=1e-8), axis=1)):
+                    extended_points.append(edge_point)
                 # Exclude the edge point itself from the search
                 other_skel_pts = skel_pts[np.any(np.abs(skel_pts - edge_point) > 1e-8, axis=1)]
                 if len(other_skel_pts) == 0:
