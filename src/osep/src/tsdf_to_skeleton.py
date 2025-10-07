@@ -641,7 +641,7 @@ class RealTimeSkeletonizerNode(Node):
         self.voxel_size = self.get_parameter('voxel_size').get_parameter_value().double_value
 
         self.skel = Skeletonizer(voxel_size=self.voxel_size, super_voxel_factor=4.0,
-                 max_edge_points=10, dot_threshold=0.7, min_dist_factor=4.0, max_dist_percentage=0.25, max_clusters=20,
+                 max_edge_points=10, dot_threshold=0.7, min_dist_factor=5.0, max_dist_percentage=0.25, max_clusters=20,
                  merge_radius_factor=5.0)
 
         self.sub = self.create_subscription(PointCloud2, self.input_topic, self.callback, 1)
