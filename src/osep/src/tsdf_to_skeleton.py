@@ -21,13 +21,14 @@ import colorsys
 
 class Skeletonizer:
     def __init__(self, voxel_size=1.0, super_voxel_factor=4.0,
-                 max_edge_points=10, dot_threshold=0.8, min_dist_factor=8.0, max_clusters=20,
+                 max_edge_points=10, dot_threshold=0.8, min_dist_factor=8.0, max_dist_percentage=0.25, max_clusters=20,
                  merge_radius_factor=5.0):
         self.voxel_size = voxel_size
         self.super_voxel_size = super_voxel_factor * voxel_size
         self.max_edge_points = max_edge_points
         self.dot_threshold = dot_threshold
         self.min_dist_factor = min_dist_factor
+        self.max_dist_percentage = max_dist_percentage
         self.max_clusters = max_clusters
         self.merge_radius_factor = merge_radius_factor
 
@@ -216,6 +217,9 @@ class Skeletonizer:
         selected_dirs = []
         selected_dist = []
         min_dist = self.min_dist_factor * self.voxel_size
+        max_dist = np.max(dists)
+        min_dist = max(min_dist, self.max_dist_percentage * max_dist)
+
         for idx, dist in idx_dist:
             if dist < min_dist:
                 continue
@@ -628,7 +632,7 @@ class RealTimeSkeletonizerNode(Node):
         self.output_topic = self.get_parameter('output_topic').get_parameter_value().string_value
 
         self.skel = Skeletonizer(voxel_size=1.0, super_voxel_factor=4.0,
-                 max_edge_points=10, dot_threshold=0.7, min_dist_factor=8.0, max_clusters=20,
+                 max_edge_points=10, dot_threshold=0.7, min_dist_factor=4.0, max_dist_percentage=0.25, max_clusters=20,
                  merge_radius_factor=5.0)
 
         self.sub = self.create_subscription(PointCloud2, self.input_topic, self.callback, 1)
@@ -806,7 +810,7 @@ class RealTimeSkeletonizerNode(Node):
             densified, merged_edge_points, merged_clusters
         )
         extended_densified = self.skel.extend_single_cluster_endpoints(
-            merged_densified, updated_merged_edge_points, updated_merged_clusters, voxel_factor=2.5
+            merged_densified, updated_merged_edge_points, updated_merged_clusters, voxel_factor=4.0
         )
 
         # Combine edge points and centroids for visualization
