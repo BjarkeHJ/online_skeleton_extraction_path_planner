@@ -603,9 +603,6 @@ class Skeletonizer:
             extended_points = []
 
             for edge_point in single_cluster_edge_points:
-                # Ensure the edge point is present in the skeleton
-                if not np.any(np.all(np.isclose(skel_pts, edge_point, atol=1e-8), axis=1)):
-                    extended_points.append(edge_point)
                 # Exclude the edge point itself from the search
                 other_skel_pts = skel_pts[np.any(np.abs(skel_pts - edge_point) > 1e-8, axis=1)]
                 if len(other_skel_pts) == 0:
